@@ -18,16 +18,7 @@ WELCOME = ('🎾 Добро пожаловать в TopCoach!\n\n'
            '👨‍👩‍👧 Родителю — занятия ребёнка под рукой.\n\n'
            'Начнём с короткой регистрации?')
 
-def connect():
-    path = Path(os.environ.get('DB_PATH', '.data/topcoach.sqlite3'))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=20)
-    db.row_factory = sqlite3.Row
-    db.execute('PRAGMA journal_mode=WAL')
-    db.execute('CREATE TABLE IF NOT EXISTS users (telegram_id INTEGER PRIMARY KEY, data TEXT NOT NULL)')
-    db.execute('CREATE TABLE IF NOT EXISTS updates (id INTEGER PRIMARY KEY, created INTEGER NOT NULL)')
-    db.execute('CREATE TABLE IF NOT EXISTS outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, method TEXT NOT NULL, payload TEXT NOT NULL, sent INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0)')
-    return db
+from .database import connect
 
 def keyboard(rows):
     return {'inline_keyboard': [[{'text': text, 'callback_data': data} for text, data in row] for row in rows]}
@@ -60,7 +51,7 @@ def show_venues(db, user):
 
 def finish(db, user):
     user['step'] = 'done'
-    user['registeredAt'] = int(time.time())
+    user.setdefault('registeredAt', int(time.time()))
     url = os.environ.get('MINI_APP_URL', '')
     markup = {'inline_keyboard': [[{'text': '🎾 Открыть TopCoach', 'web_app': {'url': url}}]]} if url.startswith('https://') else None
     send(db, user['telegramId'], '✅ Всё готово, ' + user['fullName'] + '!\n\n'

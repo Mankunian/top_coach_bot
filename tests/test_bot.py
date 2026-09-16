@@ -13,6 +13,8 @@ class BotTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         os.environ['DB_PATH'] = self.temp.name + '/test.sqlite3'
+        from backend.database import initialize
+        initialize()
         self.number = 0
 
     def tearDown(self):
