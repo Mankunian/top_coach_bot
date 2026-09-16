@@ -32,12 +32,14 @@ def tick(state,db,now=None):
                 key=balance_key(s['coach'],pid);charged=pid not in s['absent'] and state['balances'].get(key,0)>0
                 if charged:state['balances'][key]-=1
                 s['charges'].append(dict(player=pid,hours=1 if charged else 0))
+                send(db,pid,f"🏁 Тренировка «{s['name']}» завершена.\n"+('Списан 1 час.' if charged else 'Часы не списаны.')+f"\nОстаток: {state['balances'].get(key,0)} ч.")
+            send(db,s['coach'],f"🏁 Тренировка группы «{s['name']}» завершена.\n{s['date']} · {s['time']}\nСписано часов: {sum(c['hours'] for c in s['charges'])}.")
             continue
         if now>=s['begins'] and not s.get('startNotified'):
             for recipient in set([s['coach']]+[p for p in s['members'] if p not in s['absent']]):
                 send(db,recipient,f"🎾 Тренировка группы «{s['name']}» началась!\n🕒 {s['time']} · {s['date']}\n📍 {s['place']}")
             s['startNotified']=True
-        for hours in [48,24]:
+        for hours in [3]:
             # Avoid sending both missed reminders after downtime.
             delta=s['begins']-now
             if hours not in s['reminded'] and hours*3600-180<=delta<=hours*3600:

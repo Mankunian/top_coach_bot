@@ -48,7 +48,7 @@ class Handler(SimpleHTTPRequestHandler):
         if route.path == '/health':
             with connect() as db:
                 db.execute('SELECT 1')
-            return self.result(200, {'status': 'ok', 'version':'crm-2', 'database':'postgresql' if db.pg else 'sqlite'})
+            return self.result(200, {'status': 'ok', 'version':'crm-3', 'database':'postgresql' if db.pg else 'sqlite'})
         if route.path == '/api/cities':
             return self.result(200, cities())
         if route.path == '/api/venues':

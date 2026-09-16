@@ -65,3 +65,15 @@ class CRMTests(unittest.TestCase):
    payloads=[json.loads(r['payload']) for r in db.execute('SELECT payload FROM outbox').fetchall()]
    started=[p for p in payloads if 'началась!' in p.get('text','')]
    self.assertEqual(len(started),2);self.assertEqual({p['chat_id'] for p in started},{10,20})
+ def test_three_hour_and_end_notifications(self):
+  self.setup_group()
+  with connect() as db:
+   state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data']);s=state['sessions'][0]
+   db.execute('DELETE FROM outbox')
+   tick(state,db,s['begins']-48*3600)
+   self.assertEqual(db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],0)
+   tick(state,db,s['begins']-3*3600);tick(state,db,s['begins']-3*3600+1)
+   self.assertEqual(db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],2)
+   tick(state,db,s['ends']);tick(state,db,s['ends']+1)
+   messages=[json.loads(r['payload']) for r in db.execute('SELECT payload FROM outbox').fetchall()]
+   self.assertEqual(sum('завершена' in m.get('text','') for m in messages),2)
