@@ -47,3 +47,21 @@ class CRMTests(unittest.TestCase):
   self.setup_group()
   for amount in ['NaN','-1','1.001']:
    with self.assertRaises(ValueError):perform(self.coach,'payment',dict(player=20,hours=1,amount=amount,date=datetime.now(TZ).date().isoformat(),payer='P',nonce='a'))
+ def test_notifications_names_and_start_once(self):
+  self.setup_group()
+  perform(self.coach,'student_name',dict(player=20,name='Иван Петров'))
+  self.assertEqual(perform(self.coach,'view',{})['students'][0]['displayName'],'Иван Петров')
+  with self.assertRaises(ValueError):perform(self.other,'student_name',dict(player=20,name='Чужое имя'))
+  data=dict(player=20,hours=3,amount='30000',date=datetime.now(TZ).date().isoformat(),payer='Иван',nonce='notify')
+  perform(self.coach,'payment',data);perform(self.coach,'payment',data)
+  with connect() as db:
+   payloads=[json.loads(r['payload']) for r in db.execute('SELECT payload FROM outbox').fetchall()]
+   texts=[p.get('text','') for p in payloads]
+   self.assertTrue(any('Coach принял вашу заявку' in t for t in texts))
+   self.assertTrue(any('добавил вас в группу' in t and 'Ближайшая тренировка' in t for t in texts))
+   self.assertEqual(sum('добавил 3 ч' in t for t in texts),1)
+   state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data']);s=state['sessions'][0]
+   tick(state,db,s['begins']+1);tick(state,db,s['begins']+2)
+   payloads=[json.loads(r['payload']) for r in db.execute('SELECT payload FROM outbox').fetchall()]
+   started=[p for p in payloads if 'началась!' in p.get('text','')]
+   self.assertEqual(len(started),2);self.assertEqual({p['chat_id'] for p in started},{10,20})

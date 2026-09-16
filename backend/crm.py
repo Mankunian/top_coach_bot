@@ -33,6 +33,10 @@ def tick(state,db,now=None):
                 if charged:state['balances'][key]-=1
                 s['charges'].append(dict(player=pid,hours=1 if charged else 0))
             continue
+        if now>=s['begins'] and not s.get('startNotified'):
+            for recipient in set([s['coach']]+[p for p in s['members'] if p not in s['absent']]):
+                send(db,recipient,f"🎾 Тренировка группы «{s['name']}» началась!\n🕒 {s['time']} · {s['date']}\n📍 {s['place']}")
+            s['startNotified']=True
         for hours in [48,24]:
             # Avoid sending both missed reminders after downtime.
             delta=s['begins']-now
@@ -48,7 +52,7 @@ def state_view(state,user,db):
     ids=members(state,uid) if coach else [uid]
     def card(pid):
         u=people.get(pid,{});c=uid if coach else next((r['coach'] for r in req if r['status']=='accepted'),0)
-        return dict(public(u),hours=state['balances'].get(balance_key(c,pid),0),comment=state['comments'].get(balance_key(c,pid),''),username=u.get('username'))
+        return dict(public(u),displayName=state.get('names',{}).get(balance_key(c,pid),u.get('fullName','Игрок')),hours=state['balances'].get(balance_key(c,pid),0),comment=state['comments'].get(balance_key(c,pid),''),username=u.get('username'))
     return dict(user=user,cities=cities(),requests=[dict(r,playerName=people.get(r['player'],{}).get('fullName','Игрок'),coachName=people.get(r['coach'],{}).get('fullName','Тренер')) for r in req],students=[card(pid) for pid in ids if pid in people],groups=[g for g in state['groups'] if g['coach']==uid or (not coach and uid in g['members'])],sessions=[s for s in state['sessions'] if s['coach']==uid or (not coach and uid in s['members'])],payments=[p for p in state['payments'] if p['coach']==uid] if coach else [],trainers=[dict(public(u),username=u.get('username') if any(r['coach']==u['telegramId'] and r['status']=='accepted' for r in req) else None) for u in profiles if u.get('role')=='coach' and u.get('step')=='done' and u.get('cityId')==user.get('cityId')])
 def perform(user,action,data):
     with connect() as db:
@@ -65,13 +69,13 @@ def perform(user,action,data):
             if any(r['player']==uid and r['status'] in ['pending','accepted'] for r in state['requests']):raise ValueError('Заявка уже отправлена или принята')
             state['requests'].append(dict(id=ident(),coach=target['telegramId'],player=uid,status='pending',comment=str(data.get('comment',''))[:500],created=time.time()))
             send(db,target['telegramId'],f"📩 Новая заявка: {user['fullName']}. Откройте раздел «Заявки».")
-        elif action in ['decision','group','assign','rename','delete','payment','comment','attendance','cancel']:
+        elif action in ['decision','group','assign','rename','delete','payment','comment','student_name','attendance','cancel']:
             if not coach:raise ValueError('Действие доступно тренеру')
             if action=='decision':
                 r=next((r for r in state['requests'] if r['id']==data.get('id') and r['coach']==uid),None)
                 if not r or r['status']!='pending' or data.get('status') not in ['accepted','rejected']:raise ValueError('Заявка недоступна')
                 r['status']=data['status'];r['decided']=time.time();state['comments'][balance_key(uid,r['player'])]=r['comment']
-                send(db,r['player'],'✅ Тренер принял вашу заявку!' if r['status']=='accepted' else 'Заявка отклонена. Свяжитесь с тренером для уточнения.')
+                send(db,r['player'],f"✅ Тренер {user['fullName']} принял вашу заявку!\n\nСкоро тренер свяжется с вами или определит вас в группу. Расписание появится в TopCoach." if r['status']=='accepted' else 'Заявка отклонена. Свяжитесь с тренером для уточнения.')
             elif action=='group':
                 name=required(data.get('name'),60);place=required(data.get('place'));start=date(data['start']);end=date(data['end']) if data.get('end') else None
                 days=data.get('days',[]);kind=data.get('type');clock=datetime.strptime(data['time'],'%H:%M')
@@ -86,6 +90,9 @@ def perform(user,action,data):
                     g['members'].append(pid)
                     for s in state['sessions']:
                         if s['group']==g['id'] and s['status']=='scheduled':s['members'].append(pid)
+                    upcoming=sorted([s for s in state['sessions'] if s['group']==g['id'] and s['status']=='scheduled' and s['ends']>time.time()],key=lambda s:s['begins'])
+                    next_text=(f"\nБлижайшая тренировка: {upcoming[0]['date']} в {upcoming[0]['time']}." if upcoming else '\nРасписание появится после назначения тренировки.')
+                    send(db,pid,f"🎾 Тренер {user['fullName']} добавил вас в группу «{g['name']}».\n📍 {g['place']}"+next_text+'\nДо встречи на корте!')
                 if action=='rename':
                     g['name']=required(data.get('name'),60)
                     for s in state['sessions']:
@@ -95,11 +102,12 @@ def perform(user,action,data):
                     state['groups'].remove(g)
                     for s in state['sessions']:
                         if s['group']==g['id'] and s['status']=='scheduled':s['status']='cancelled';s['reason']='Группа удалена'
-            elif action in ['payment','comment']:
+            elif action in ['payment','comment','student_name']:
                 pid=int(data['player'])
                 if pid not in members(state,uid):raise ValueError('Ученик недоступен')
                 key=balance_key(uid,pid)
-                if action=='comment':state['comments'][key]=str(data.get('comment',''))[:500]
+                if action=='student_name':state.setdefault('names',{})[key]=required(data.get('name'),120)
+                elif action=='comment':state['comments'][key]=str(data.get('comment',''))[:500]
                 else:
                     hours=data.get('hours')
                     try:amount=Decimal(str(data['amount']))
@@ -108,8 +116,9 @@ def perform(user,action,data):
                     if type(hours)!=int or not 0<hours<=100000 or not amount.is_finite() or amount<0 or amount>1000000000 or amount*100!=int(amount*100) or paid>datetime.now(TZ).date():raise ValueError('Проверьте часы, сумму и дату')
                     if not any(p['nonce']==nonce and p['coach']==uid for p in state['payments']):
                         g=next((g for g in state['groups'] if g['coach']==uid and pid in g['members']),None)
-                        state['payments'].append(dict(id=ident(),nonce=nonce,coach=uid,player=pid,name=read_user(db,pid)['fullName'],hours=hours,amount=int(amount*100),date=paid.isoformat(),created=time.time(),payer=required(data.get('payer'),120),comment=str(data.get('comment',''))[:500],group=g['name'] if g else 'Без группы',type=g['type'] if g else 'Не назначен'))
+                        state['payments'].append(dict(id=ident(),nonce=nonce,coach=uid,player=pid,name=state.get('names',{}).get(key,read_user(db,pid)['fullName']),hours=hours,amount=int(amount*100),date=paid.isoformat(),created=time.time(),payer=required(data.get('payer'),120),comment=str(data.get('comment',''))[:500],group=g['name'] if g else 'Без группы',type=g['type'] if g else 'Не назначен'))
                         state['balances'][key]=state['balances'].get(key,0)+hours
+                        send(db,pid,f"✅ Тренер {user['fullName']} добавил {hours} ч.\n💳 Оплачено: {amount:,.2f} ₸\n📅 Дата оплаты: {paid.isoformat()}\n🎾 На балансе: {state['balances'][key]} ч.")
             else:
                 s=next((s for s in state['sessions'] if s['id']==data.get('id') and s['coach']==uid),None)
                 if not s or s['status']!='scheduled':raise ValueError('Тренировка завершена или недоступна')
