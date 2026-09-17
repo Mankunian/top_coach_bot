@@ -23,3 +23,13 @@ test('stale scheduled response renders ended card and disables attendance after 
  context.openSession('s');assert.doesNotMatch(context.dialog,/Отменить тренировку/);
  context.state.sessions=[{...session,members:[20]}];context.openSession('s');assert.match(context.dialog,/disabled/);
 });
+for(const name of ['durationField','memberFields','addMember','assignMenu','paymentGroupLabel'])vm.runInContext(source.split('\n').find(line=>line.startsWith(`function ${name}(`)),context);
+test('group form includes existing students from other groups, excludes only this group',()=>{
+ context.state={students:[{telegramId:20,fullName:'Player'}],groups:[{id:'a',name:'A',members:[20],type:'Групповая'},{id:'b',name:'B',members:[],type:'Групповая'}]};
+ assert.match(context.memberFields(),/value="20"/);
+ assert.match(context.memberFields(context.state.groups[1]),/value="20"/);
+ assert.doesNotMatch(context.memberFields(context.state.groups[0]),/value="20"/);
+ context.addMember('b');assert.match(context.dialog,/player:20/);
+ context.assignMenu(20);assert.match(context.dialog,/id:'b'/);assert.doesNotMatch(context.dialog,/id:'a'/);
+ assert.match(context.durationField(90),/value="90" selected/);
+});

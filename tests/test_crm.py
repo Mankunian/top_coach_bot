@@ -108,3 +108,66 @@ class CRMTests(unittest.TestCase):
    self.assertEqual(persisted['sessions'][0]['status'],'completed')
    messages=[json.loads(r['payload']) for r in db.execute('SELECT payload FROM outbox').fetchall()]
    self.assertEqual(sum('завершена' in m.get('text','') for m in messages),2)
+
+ def test_duration_and_multiple_groups(self):
+  gid=self.setup_group()
+  original=perform(self.coach,'view',{})['groups'][0]
+  for minutes in [30,60,90,120]:
+   data={k:original[k] for k in ['name','place','start','end','days','time','type']}
+   data.update(durationMinutes=minutes,members=[20,20])
+   result=perform(self.coach,'group',data);g=result['groups'][-1]
+   self.assertEqual(g['members'],[20]);self.assertEqual(g['durationMinutes'],minutes)
+   sessions=[s for s in result['sessions'] if s['group']==g['id']]
+   self.assertTrue(sessions)
+   self.assertTrue(all(s['ends']-s['begins']==minutes*60 for s in sessions))
+  self.assertEqual(len(perform(self.coach,'view',{})['students']),1)
+  self.assertEqual(len(perform(self.player,'view',{})['groups']),5)
+  perform(self.coach,'assign',dict(id=gid,player=20))
+  self.assertEqual(perform(self.coach,'view',{})['groups'][0]['members'],[20])
+  for value in [0,45,-30,True,'90',None]:
+   with self.assertRaises(ValueError):perform(self.coach,'edit_group',dict(id=gid,durationMinutes=value))
+  with self.assertRaises(ValueError):perform(self.other,'edit_group',dict(id=gid,durationMinutes=90))
+  with self.assertRaises(ValueError):perform(self.coach,'edit_group',dict(id=gid,members=[30]))
+
+ def test_edit_duration_preserves_started_and_history(self):
+  from unittest.mock import patch
+  gid=self.setup_group();s=perform(self.coach,'view',{})['sessions'][0]
+  future=perform(self.coach,'edit_group',dict(id=gid,durationMinutes=90))['sessions'][0]
+  self.assertEqual(future['ends'],s['begins']+5400)
+  with patch('backend.crm.time.time',return_value=s['begins']):
+   result=perform(self.coach,'edit_group',dict(id=gid,durationMinutes=120))
+   self.assertEqual(result['groups'][0]['durationMinutes'],120)
+   self.assertEqual(result['sessions'][0]['ends'],future['ends'])
+  with patch('backend.crm.time.time',return_value=future['ends']):
+   result=perform(self.coach,'edit_group',dict(id=gid,durationMinutes=30))
+   self.assertEqual(result['sessions'][0]['status'],'completed')
+   self.assertEqual(result['sessions'][0]['ends'],future['ends'])
+
+ def test_legacy_duration_migration_is_idempotent(self):
+  self.setup_group()
+  with connect() as db:
+   state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data'])
+   for g in state['groups']:g.pop('durationMinutes',None)
+   for s in state['sessions']:s.pop('durationMinutes',None)
+   db.execute('UPDATE crm SET data=? WHERE id=1',(json.dumps(state),))
+   db.execute('DELETE FROM migrations WHERE id=?',('group-duration-v1',))
+  initialize();initialize()
+  view=perform(self.coach,'view',{})
+  self.assertEqual(view['groups'][0]['durationMinutes'],60)
+  self.assertEqual(view['sessions'][0]['durationMinutes'],60)
+
+ def test_edit_adds_existing_student_and_individual_limit(self):
+  self.setup_group();original=perform(self.coach,'view',{})['groups'][0]
+  data={k:original[k] for k in ['name','place','start','end','days','time']}
+  data.update(type='Индивидуальная',durationMinutes=30)
+  g=perform(self.coach,'group',data)['groups'][-1]
+  result=perform(self.coach,'edit_group',dict(id=g['id'],members=[20,20]))
+  self.assertEqual(result['groups'][-1]['members'],[20])
+  self.assertEqual([s for s in result['sessions'] if s['group']==g['id']][0]['members'],[20])
+  other_player=dict(self.player,telegramId=40)
+  with connect() as db:save_user(db,other_player)
+  perform(other_player,'request',dict(coach=10))
+  r=perform(self.coach,'view',{})['requests'][-1]
+  perform(self.coach,'decision',dict(id=r['id'],status='accepted'))
+  with self.assertRaises(ValueError):perform(self.coach,'edit_group',dict(id=g['id'],members=[40]))
+  self.assertEqual(perform(self.coach,'view',{})['groups'][-1]['members'],[20])

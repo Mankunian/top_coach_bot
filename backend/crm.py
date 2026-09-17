@@ -13,6 +13,26 @@ def required(value,maxlen=250):
 def members(state,coach):return [r['player'] for r in state['requests'] if r['coach']==coach and r['status']=='accepted']
 def balance_key(coach,player):return str(coach)+':'+str(player)
 def date(value):return datetime.strptime(value,'%Y-%m-%d').date()
+def duration(value):
+    if type(value)!=int or value not in [30,60,90,120]:raise ValueError('Выберите длительность: 30, 60, 90 или 120 минут')
+    return value
+
+def assign_member(state,db,user,g,pid):
+    if type(pid)!=int or pid not in members(state,user['telegramId']):raise ValueError('Ученик ещё не принят')
+    if pid in g['members']:return
+    if g['type']=='Индивидуальная' and g['members']:raise ValueError('В индивидуальной группе может быть только один ученик')
+    g['members'].append(pid)
+    for session in state['sessions']:
+        if session['group']==g['id'] and session['status']=='scheduled' and pid not in session['members']:session['members'].append(pid)
+    upcoming=sorted([session for session in state['sessions'] if session['group']==g['id'] and session['status']=='scheduled' and session['ends']>time.time()],key=lambda session:session['begins'])
+    next_text=(f"\nБлижайшая тренировка: {upcoming[0]['date']} в {upcoming[0]['time']}." if upcoming else '\nРасписание появится после назначения тренировки.')
+    send(db,pid,f"🎾 Тренер {user['fullName']} добавил вас в группу «{g['name']}».\n📍 {g['place']}"+next_text+'\nДо встречи на корте!')
+
+def add_selected_members(state,db,user,g,data):
+    selected=data.get('members',[])
+    if not isinstance(selected,list):raise ValueError('Проверьте список учеников')
+    for pid in selected:assign_member(state,db,user,g,pid)
+
 def generate(state,g):
     start=max(date(g['start']),datetime.now(TZ).date());end=min(date(g['end']) if g['end'] else start+timedelta(days=90),start+timedelta(days=90))
     existing={(s['group'],s['date']) for s in state['sessions']}
@@ -20,7 +40,8 @@ def generate(state,g):
         ds=start.isoformat()
         if (start.weekday()+1)%7 in g['days'] and (g['id'],ds) not in existing:
             begins=datetime.fromisoformat(ds+'T'+g['time']).replace(tzinfo=TZ).timestamp()
-            if begins+3600>time.time():state['sessions'].append(dict(id=ident(),group=g['id'],coach=g['coach'],name=g['name'],place=g['place'],date=ds,time=g['time'],begins=begins,ends=begins+3600,members=list(g['members']),absent=[],status='scheduled',reminded=[]))
+            minutes=g.get('durationMinutes',60)
+            if begins+minutes*60>time.time():state['sessions'].append(dict(id=ident(),group=g['id'],coach=g['coach'],name=g['name'],place=g['place'],date=ds,time=g['time'],begins=begins,ends=begins+minutes*60,durationMinutes=minutes,members=list(g['members']),absent=[],status='scheduled',reminded=[]))
         start+=timedelta(days=1)
 def tick(state,db,now=None):
     now=now or time.time()
@@ -79,7 +100,7 @@ def perform(user,action,data):
                 markup={'inline_keyboard':[[{'text':'📩 Открыть заявки','web_app':{'url':link}}]]}
             comment=str(data.get('comment','')).strip()[:500] or 'Не указан'
             send(db,target['telegramId'],f"📩 Новая заявка на тренировки\n\n👤 Ученик: {user['fullName']}\n📍 Город: {user.get('city','—')}\n\n💬 Комментарий:\n{comment}\n\nПримите или отклоните заявку в TopCoach.",markup)
-        elif action in ['decision','group','assign','rename','delete','payment','comment','student_name','attendance','cancel']:
+        elif action in ['decision','group','edit_group','assign','rename','delete','payment','comment','student_name','attendance','cancel']:
             if not coach:raise ValueError('Действие доступно тренеру')
             if action=='decision':
                 r=next((r for r in state['requests'] if r['id']==data.get('id') and r['coach']==uid),None)
@@ -90,19 +111,19 @@ def perform(user,action,data):
                 name=required(data.get('name'),60);place=required(data.get('place'));start=date(data['start']);end=date(data['end']) if data.get('end') else None
                 days=data.get('days',[]);kind=data.get('type');clock=datetime.strptime(data['time'],'%H:%M')
                 if not days or any(type(d)!=int or d not in range(7) for d in days) or kind not in ['Групповая','Индивидуальная'] or (end and end<start):raise ValueError('Проверьте расписание')
-                g=dict(id=ident(),coach=uid,name=name,place=place,city=user.get('city'),start=start.isoformat(),end=end.isoformat() if end else '',days=days,time=clock.strftime('%H:%M'),type=kind,members=[])
-                state['groups'].append(g);generate(state,g)
-            elif action in ['assign','rename','delete']:
+                g=dict(id=ident(),coach=uid,name=name,place=place,city=user.get('city'),start=start.isoformat(),end=end.isoformat() if end else '',days=days,time=clock.strftime('%H:%M'),type=kind,durationMinutes=duration(data.get('durationMinutes',60)),members=[])
+                state['groups'].append(g);generate(state,g);add_selected_members(state,db,user,g,data)
+            elif action in ['assign','rename','delete','edit_group']:
                 g=own_group()
-                if action=='assign':
-                    pid=int(data['player'])
-                    if pid not in members(state,uid) or any(pid in x['members'] for x in state['groups']) or (g['type']=='Индивидуальная' and g['members']):raise ValueError('Ученик уже в группе или ещё не принят')
-                    g['members'].append(pid)
-                    for s in state['sessions']:
-                        if s['group']==g['id'] and s['status']=='scheduled':s['members'].append(pid)
-                    upcoming=sorted([s for s in state['sessions'] if s['group']==g['id'] and s['status']=='scheduled' and s['ends']>time.time()],key=lambda s:s['begins'])
-                    next_text=(f"\nБлижайшая тренировка: {upcoming[0]['date']} в {upcoming[0]['time']}." if upcoming else '\nРасписание появится после назначения тренировки.')
-                    send(db,pid,f"🎾 Тренер {user['fullName']} добавил вас в группу «{g['name']}».\n📍 {g['place']}"+next_text+'\nДо встречи на корте!')
+                if action=='edit_group':
+                    g['name']=required(data.get('name',g['name']),60)
+                    g['durationMinutes']=duration(data.get('durationMinutes',g.get('durationMinutes',60)))
+                    # Preserve started/completed sessions; change only future defaults.
+                    for session in state['sessions']:
+                        if session['group']==g['id'] and session['status']=='scheduled' and session['begins']>time.time():
+                            session.update(name=g['name'],durationMinutes=g['durationMinutes'],ends=session['begins']+g['durationMinutes']*60)
+                    add_selected_members(state,db,user,g,data)
+                if action=='assign':assign_member(state,db,user,g,int(data['player']))
                 if action=='rename':
                     g['name']=required(data.get('name'),60)
                     for s in state['sessions']:

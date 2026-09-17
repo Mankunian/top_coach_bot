@@ -34,6 +34,14 @@ def initialize():
         db.execute('CREATE TABLE IF NOT EXISTS crm (id INTEGER PRIMARY KEY,data TEXT NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS migrations (id TEXT PRIMARY KEY)')
         db.execute('INSERT INTO crm VALUES (1,?) ON CONFLICT(id) DO NOTHING',(json.dumps(dict(requests=[],groups=[],sessions=[],payments=[],balances={},comments={})),))
+        if db.pg:db.execute('BEGIN IMMEDIATE')
+        if not db.execute('SELECT id FROM migrations WHERE id=?',('group-duration-v1',)).fetchone():
+            state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data'])
+            for group in state['groups']:group.setdefault('durationMinutes',60)
+            for session in state['sessions']:
+                session.setdefault('durationMinutes',int((session['ends']-session['begins'])/60))
+            db.execute('UPDATE crm SET data=? WHERE id=1',(json.dumps(state,ensure_ascii=False),))
+            db.execute('INSERT INTO migrations VALUES (?)',('group-duration-v1',))
         path=Path(os.getenv('DB_PATH','.data/topcoach.sqlite3'))
         if db.pg and path.exists():
             db.execute('BEGIN IMMEDIATE')
