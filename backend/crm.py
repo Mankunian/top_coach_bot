@@ -14,7 +14,7 @@ def members(state,coach):return [r['player'] for r in state['requests'] if r['co
 def balance_key(coach,player):return str(coach)+':'+str(player)
 def date(value):return datetime.strptime(value,'%Y-%m-%d').date()
 def duration(value):
-    if type(value)!=int or value not in [30,60,90,120]:raise ValueError('Выберите длительность: 30, 60, 90 или 120 минут')
+    if type(value)!=int or not 1<=value<=1440:raise ValueError('Укажите длительность от 1 до 1440 минут')
     return value
 
 def assign_member(state,db,user,g,pid):
@@ -51,11 +51,14 @@ def tick(state,db,now=None):
         if now>=s['ends']:
             s['status']='completed';s['charges']=[]
             for pid in s['members']:
-                key=balance_key(s['coach'],pid);charged=pid not in s['absent'] and state['balances'].get(key,0)>0
-                if charged:state['balances'][key]-=1
-                s['charges'].append(dict(player=pid,hours=1 if charged else 0))
-                send(db,pid,f"🏁 Тренировка «{s['name']}» завершена.\n"+('Списан 1 час.' if charged else 'Часы не списаны.')+f"\nОстаток: {state['balances'].get(key,0)} ч.")
-            send(db,s['coach'],f"🏁 Тренировка группы «{s['name']}» завершена.\n{s['date']} · {s['time']}\nСписано часов: {sum(c['hours'] for c in s['charges'])}.")
+                key=balance_key(s['coach'],pid)
+                available=max(0,round(state['balances'].get(key,0)*60))
+                minutes=round((s['ends']-s['begins'])/60)
+                charged=min(available,minutes) if pid not in s['absent'] else 0
+                state['balances'][key]=(available-charged)/60
+                s['charges'].append(dict(player=pid,hours=charged/60,minutes=charged))
+                send(db,pid,f"🏁 Тренировка «{s['name']}» завершена.\n"+(f'Списано: {charged} мин.' if charged else 'Часы не списаны.')+f"\nОстаток: {available-charged} мин.")
+            send(db,s['coach'],f"🏁 Тренировка группы «{s['name']}» завершена.\n{s['date']} · {s['time']}\nСписано: {sum(c['minutes'] for c in s['charges'])} мин.")
             continue
         if now>=s['begins'] and not s.get('startNotified'):
             for recipient in set([s['coach']]+[p for p in s['members'] if p not in s['absent']]):
@@ -148,8 +151,8 @@ def perform(user,action,data):
                     if not any(p['nonce']==nonce and p['coach']==uid for p in state['payments']):
                         g=next((g for g in state['groups'] if g['coach']==uid and pid in g['members']),None)
                         state['payments'].append(dict(id=ident(),nonce=nonce,coach=uid,player=pid,name=state.get('names',{}).get(key,read_user(db,pid)['fullName']),hours=hours,amount=int(amount*100),date=paid.isoformat(),created=time.time(),payer=required(data.get('payer'),120),comment=str(data.get('comment',''))[:500],group=g['name'] if g else 'Без группы',type=g['type'] if g else 'Не назначен'))
-                        state['balances'][key]=state['balances'].get(key,0)+hours
-                        send(db,pid,f"✅ Тренер {user['fullName']} добавил {hours} ч.\n💳 Оплачено: {amount:,.2f} ₸\n📅 Дата оплаты: {paid.isoformat()}\n🎾 На балансе: {state['balances'][key]} ч.")
+                        state['balances'][key]=(round(state['balances'].get(key,0)*60)+hours*60)/60
+                        send(db,pid,f"✅ Тренер {user['fullName']} добавил {hours} ч.\n💳 Оплачено: {amount:,.2f} ₸\n📅 Дата оплаты: {paid.isoformat()}\n🎾 На балансе: {round(state['balances'][key]*60)} мин.")
             else:
                 s=next((s for s in state['sessions'] if s['id']==data.get('id') and s['coach']==uid),None)
                 if not s or s['status']!='scheduled':raise ValueError('Тренировка завершена или недоступна')

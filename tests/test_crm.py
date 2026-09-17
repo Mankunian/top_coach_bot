@@ -124,7 +124,7 @@ class CRMTests(unittest.TestCase):
   self.assertEqual(len(perform(self.player,'view',{})['groups']),5)
   perform(self.coach,'assign',dict(id=gid,player=20))
   self.assertEqual(perform(self.coach,'view',{})['groups'][0]['members'],[20])
-  for value in [0,45,-30,True,'90',None]:
+  for value in [0,1441,-30,True,'90',None]:
    with self.assertRaises(ValueError):perform(self.coach,'edit_group',dict(id=gid,durationMinutes=value))
   with self.assertRaises(ValueError):perform(self.other,'edit_group',dict(id=gid,durationMinutes=90))
   with self.assertRaises(ValueError):perform(self.coach,'edit_group',dict(id=gid,members=[30]))
@@ -171,3 +171,33 @@ class CRMTests(unittest.TestCase):
   perform(self.coach,'decision',dict(id=r['id'],status='accepted'))
   with self.assertRaises(ValueError):perform(self.coach,'edit_group',dict(id=g['id'],members=[40]))
   self.assertEqual(perform(self.coach,'view',{})['groups'][-1]['members'],[20])
+
+ def test_five_minute_completion_and_exact_minute_billing(self):
+  from unittest.mock import patch
+  gid=self.setup_group()
+  perform(self.coach,'payment',dict(player=20,hours=1,amount='100',date=datetime.now(TZ).date().isoformat(),payer='Player',nonce='five'))
+  s=perform(self.coach,'edit_group',dict(id=gid,durationMinutes=5))['sessions'][0]
+  self.assertEqual(s['ends']-s['begins'],300)
+  with patch('backend.crm.time.time',return_value=s['ends']-1):
+   self.assertEqual(perform(self.coach,'view',{})['sessions'][0]['status'],'scheduled')
+  with patch('backend.crm.time.time',return_value=s['ends']):
+   for _ in range(2):
+    view=perform(self.coach,'view',{})
+    self.assertEqual(view['sessions'][0]['status'],'completed')
+    self.assertEqual(round(view['students'][0]['hours']*60),55)
+    self.assertEqual(view['sessions'][0]['charges'][0]['minutes'],5)
+
+ def test_duration_billing_absence_insufficient_and_no_rounding_drift(self):
+  gid=self.setup_group()
+  with connect() as db:
+   state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data'])
+   original=state['sessions'][0];state['groups']=[];state['balances']['10:20']=1
+   for i in range(12):
+    s=dict(original,id=str(i),status='scheduled',begins=1000,ends=1300)
+    state['sessions']=[s];tick(state,db,1300)
+    self.assertEqual(round(state['balances']['10:20']*60),55-i*5)
+   for minutes,balance,absent,expected in [(90,2,[],30),(120,0.5,[],0),(5,1,[20],60)]:
+    state['balances']['10:20']=balance
+    state['sessions']=[dict(original,status='scheduled',begins=1000,ends=1000+minutes*60,absent=absent)]
+    tick(state,db,1000+minutes*60)
+    self.assertEqual(round(state['balances']['10:20']*60),expected)

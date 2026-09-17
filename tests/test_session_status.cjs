@@ -6,7 +6,7 @@ const vm=require('node:vm');
 const source=fs.readFileSync('dist/live.js','utf8');
 const context={Date, state:null, day:'2026-09-17', e:String, money:String, heading:()=>'',weekCalendar:()=>'',premiumBanner:()=>'',modal:html=>{context.dialog=html}};
 vm.createContext(context);
-for(const name of ['sessionStatus','status','home','openSession']){
+for(const name of ['sessionStatus','status','home','openSession','balanceLabel']){
  const line=source.split('\n').find(line=>line.startsWith(`function ${name}(`));
  vm.runInContext(line,context);
 }
@@ -31,5 +31,11 @@ test('group form includes existing students from other groups, excludes only thi
  assert.doesNotMatch(context.memberFields(context.state.groups[0]),/value="20"/);
  context.addMember('b');assert.match(context.dialog,/player:20/);
  context.assignMenu(20);assert.match(context.dialog,/id:'b'/);assert.doesNotMatch(context.dialog,/id:'a'/);
- assert.match(context.durationField(90),/value="90" selected/);
+ assert.match(context.durationField(90),/value="90" required/);
+});
+test('minute balances remain readable',()=>{
+ assert.equal(context.balanceLabel(55/60),'55 мин');
+ assert.equal(context.balanceLabel(115/60),'1 ч 55 мин');
+ assert.equal(context.balanceLabel(0),'0 ч');
+ assert.match(context.durationField(5),/value="5"/);
 });
