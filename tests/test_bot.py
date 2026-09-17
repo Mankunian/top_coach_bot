@@ -40,6 +40,8 @@ class BotTests(unittest.TestCase):
             self.update(callback='register', user=uid)
             self.update(callback='role:' + role, user=uid)
             self.update(callback='city:' + cities()[0]['id'], user=uid)
+            with connect() as db:
+                self.assertEqual(read_user(db,uid)['step'], 'venue' if role=='coach' else 'done')
             event = self.update(callback='venue:' + venues(cities()[0]['id'])[0]['id'], user=uid)
             with connect() as db:
                 user = read_user(db, uid)
@@ -51,7 +53,7 @@ class BotTests(unittest.TestCase):
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0], count)
 
     def test_invalid_city_and_venue(self):
-        self.update('/start'); self.update(callback='register'); self.update(callback='role:player')
+        self.update('/start'); self.update(callback='register'); self.update(callback='role:coach')
         self.update(callback='city:forged')
         with connect() as db:
             self.assertEqual(read_user(db, 101)['step'], 'city')

@@ -77,3 +77,13 @@ class CRMTests(unittest.TestCase):
    tick(state,db,s['ends']);tick(state,db,s['ends']+1)
    messages=[json.loads(r['payload']) for r in db.execute('SELECT payload FROM outbox').fetchall()]
    self.assertEqual(sum('завершена' in m.get('text','') for m in messages),2)
+
+ def test_request_notification_deep_link(self):
+  from unittest.mock import patch
+  with patch.dict(os.environ,{'MINI_APP_URL':'https://example.com/mini.html?source=bot'}):
+   perform(self.player,'request',{'coach':10,'comment':'Вечерняя группа'})
+  with connect() as db:
+   payload=json.loads(db.execute('SELECT payload FROM outbox ORDER BY id DESC').fetchone()['payload'])
+  self.assertIn('Player',payload['text']);self.assertIn('Вечерняя группа',payload['text'])
+  self.assertIn('page=requests',payload['reply_markup']['inline_keyboard'][0][0]['web_app']['url'])
+  self.assertIn('source=bot',payload['reply_markup']['inline_keyboard'][0][0]['web_app']['url'])

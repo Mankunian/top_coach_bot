@@ -1,4 +1,5 @@
-import json, uuid, time
+import json, uuid, time, os
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from .database import connect
@@ -70,7 +71,14 @@ def perform(user,action,data):
             if not target or target.get('role')!='coach' or target.get('step')!='done' or target.get('cityId')!=user.get('cityId'):raise ValueError('Тренер недоступен')
             if any(r['player']==uid and r['status'] in ['pending','accepted'] for r in state['requests']):raise ValueError('Заявка уже отправлена или принята')
             state['requests'].append(dict(id=ident(),coach=target['telegramId'],player=uid,status='pending',comment=str(data.get('comment',''))[:500],created=time.time()))
-            send(db,target['telegramId'],f"📩 Новая заявка: {user['fullName']}. Откройте раздел «Заявки».")
+            app_url=os.getenv('MINI_APP_URL','')
+            markup=None
+            if app_url.startswith('https://'):
+                url=urlsplit(app_url);query=dict(parse_qsl(url.query));query['page']='requests'
+                link=urlunsplit((url.scheme,url.netloc,url.path,urlencode(query),url.fragment))
+                markup={'inline_keyboard':[[{'text':'📩 Открыть заявки','web_app':{'url':link}}]]}
+            comment=str(data.get('comment','')).strip()[:500] or 'Не указан'
+            send(db,target['telegramId'],f"📩 Новая заявка на тренировки\n\n👤 Ученик: {user['fullName']}\n📍 Город: {user.get('city','—')}\n\n💬 Комментарий:\n{comment}\n\nПримите или отклоните заявку в TopCoach.",markup)
         elif action in ['decision','group','assign','rename','delete','payment','comment','student_name','attendance','cancel']:
             if not coach:raise ValueError('Действие доступно тренеру')
             if action=='decision':

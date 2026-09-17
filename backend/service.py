@@ -93,7 +93,11 @@ def process_update(update):
             city = next((c for c in cities() if c['id'] == data[5:]), None)
             if city:
                 user.update(cityId=city['id'], cityCode=city['code'], city=city['name'], step='venue')
-                show_venues(db, user)
+                if user['role']=='coach':
+                    show_venues(db, user)
+                else:
+                    user['venueId']=None
+                    finish(db, user)
         elif data.startswith('venue:') and user['step'] == 'venue':
             value = data[6:]
             if value == 'custom':
