@@ -135,6 +135,7 @@ def telegram(method, payload):
 
 def flush_outbox():
     with connect() as db:
+        db.execute('BEGIN IMMEDIATE')
         rows = db.execute('SELECT * FROM outbox WHERE sent=0 AND attempts<10 ORDER BY id LIMIT 20').fetchall()
         for row in rows:
             try:
