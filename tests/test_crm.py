@@ -28,7 +28,7 @@ class CRMTests(unittest.TestCase):
   with self.assertRaises(ValueError):perform(self.player,'group',{})
   data=dict(player=20,hours=5,amount='12000.50',date=datetime.now(TZ).date().isoformat(),payer='Parent',nonce='unique')
   perform(self.coach,'payment',data);perform(self.coach,'payment',data)
-  p=perform(self.player,'view',{});self.assertEqual(p['students'][0]['hours'],5);self.assertEqual(p['payments'],[])
+  p=perform(self.player,'view',{});self.assertEqual(p['paidTotal'],1200050);self.assertEqual(perform(self.other,'view',{})['paidTotal'],0);self.assertEqual(p['students'][0]['hours'],5);self.assertEqual(p['payments'],[])
   self.assertEqual(len(perform(self.coach,'view',{})['payments']),1)
   with self.assertRaises(ValueError):perform(self.player,'request',{'coach':30})
   session=p['sessions'][0]
