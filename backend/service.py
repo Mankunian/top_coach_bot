@@ -10,6 +10,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 from .catalog import cities, venues
+from .i18n import tr
 
 WELCOME = ('🎾 Добро пожаловать в TopCoach!\n\n'
            'Больше тенниса — меньше рутины.\n\n'
@@ -53,10 +54,9 @@ def finish(db, user):
     user['step'] = 'done'
     user.setdefault('registeredAt', int(time.time()))
     url = os.environ.get('MINI_APP_URL', '')
-    markup = {'inline_keyboard': [[{'text': '🎾 Открыть TopCoach', 'web_app': {'url': url}}]]} if url.startswith('https://') else None
-    send(db, user['telegramId'], '✅ Всё готово, ' + user['fullName'] + '!\n\n'
-         'Ваш профиль создан. О себе и стоимости занятий можно рассказать позже в Mini App.\n\n'
-         + ('Откройте TopCoach, чтобы продолжить.' if markup else 'Кнопка Mini App появится после подключения защищённого адреса приложения.'), markup)
+    lang=user.get('language','ru')
+    markup = {'inline_keyboard': [[{'text': tr(lang,'bot.open'), 'web_app': {'url': url}}]]} if url.startswith('https://') else None
+    send(db,user['telegramId'],tr(lang,'bot.ready',name=user['fullName']),markup)
 
 def process_update(update):
     if not isinstance(update, dict) or not isinstance(update.get('update_id'), int):
@@ -121,7 +121,7 @@ def process_update(update):
                 user.update(venueId=None, customVenue=text.strip())
                 finish(db, user)
         else:
-            send(db, uid, 'Используйте кнопки в последнем сообщении. Для открытия меню отправьте /start.')
+            send(db, uid, tr(user.get('language','ru'),'bot.menu'))
         save_user(db, user)
         db.execute('INSERT INTO updates VALUES (?,?)', (update['update_id'], int(time.time())))
 

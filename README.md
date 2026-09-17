@@ -35,3 +35,10 @@ node --check dist/app.js
 ```
 
 Требования: [docs/requirements.md](docs/requirements.md). Настройка бота, переменных и постоянного тома Railway: [docs/telegram-railway.md](docs/telegram-railway.md).
+
+## Лендинг и настройки
+
+- Отдельный лендинг: `landing/`, запуск `python3 landing/server.py`, http://127.0.0.1:4181/ . Для Railway создайте отдельный сервис с Root Directory `/landing` и Config File `/landing/railway.json`.
+- Профиль → Настройки: напоминание за 1 или 3 часа, русский / қазақша / English.
+- Переводы: `dist/locales/ru.json`, `en.json`, `kaz.json`. Язык сохраняется в профиле тренера.
+- Минимум тренировки 60 минут; 90 минут разрешены. Остаток в боте отображается в часах и минутах.

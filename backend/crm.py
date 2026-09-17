@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 from .database import connect
 from .service import read_user, save_user, send
 from .catalog import cities
+from .i18n import language, tr, duration_text
 TZ=timezone(timedelta(hours=5))
 def ident():return str(uuid.uuid4())
 def required(value,maxlen=250):
@@ -14,7 +15,7 @@ def members(state,coach):return [r['player'] for r in state['requests'] if r['co
 def balance_key(coach,player):return str(coach)+':'+str(player)
 def date(value):return datetime.strptime(value,'%Y-%m-%d').date()
 def duration(value):
-    if type(value)!=int or not 1<=value<=1440:raise ValueError('Укажите длительность от 1 до 1440 минут')
+    if type(value)!=int or not 60<=value<=1440:raise ValueError('Укажите длительность от 60 до 1440 минут')
     return value
 
 def assign_member(state,db,user,g,pid):
@@ -57,18 +58,22 @@ def tick(state,db,now=None):
                 charged=min(available,minutes) if pid not in s['absent'] else 0
                 state['balances'][key]=(available-charged)/60
                 s['charges'].append(dict(player=pid,hours=charged/60,minutes=charged))
-                send(db,pid,f"🏁 Тренировка «{s['name']}» завершена.\n"+(f'Списано: {charged} мин.' if charged else 'Часы не списаны.')+f"\nОстаток: {available-charged} мин.")
-            send(db,s['coach'],f"🏁 Тренировка группы «{s['name']}» завершена.\n{s['date']} · {s['time']}\nСписано: {sum(c['minutes'] for c in s['charges'])} мин.")
+                lang=language(db,pid)
+                charge=tr(lang,'bot.charged',duration=duration_text(charged,lang)) if charged else tr(lang,'bot.nocharge')
+                send(db,pid,tr(lang,'bot.completed',name=s['name'],charge=charge,balance=duration_text(available-charged,lang)))
+            lang=language(db,s['coach'])
+            send(db,s['coach'],tr(lang,'bot.coach_completed',name=s['name'],date=s['date'],time=s['time'],duration=duration_text(sum(c['minutes'] for c in s['charges']),lang)))
             continue
         if now>=s['begins'] and not s.get('startNotified'):
             for recipient in set([s['coach']]+[p for p in s['members'] if p not in s['absent']]):
-                send(db,recipient,f"🎾 Тренировка группы «{s['name']}» началась!\n🕒 {s['time']} · {s['date']}\n📍 {s['place']}")
+                send(db,recipient,tr(language(db,recipient),'bot.started',name=s['name'],time=s['time'],date=s['date'],place=s['place']))
             s['startNotified']=True
-        for hours in [3]:
+        coach=read_user(db,s['coach']) or {}
+        for hours in [coach.get('reminderHours',3)]:
             # Avoid sending both missed reminders after downtime.
             delta=s['begins']-now
-            if hours not in s['reminded'] and hours*3600-180<=delta<=hours*3600:
-                for uid in set([s['coach']]+s['members']):send(db,uid,f"🎾 {s['name']} — {s['date']} в {s['time']}\n📍 {s['place']}\nДо тренировки {hours} ч.")
+            if not s['reminded'] and hours*3600-180<=delta<=hours*3600:
+                for uid in set([s['coach']]+s['members']):send(db,uid,tr(language(db,uid),'bot.reminder',name=s['name'],date=s['date'],time=s['time'],place=s['place'],hours=hours))
                 s['reminded'].append(hours)
 def state_view(state,user,db):
     uid=user['telegramId'];coach=user['role']=='coach'
@@ -89,7 +94,14 @@ def perform(user,action,data):
             g=next((g for g in state['groups'] if g['id']==data.get('id') and g['coach']==uid),None)
             if not g:raise ValueError('Группа недоступна')
             return g
-        if action=='request':
+        if action=='settings':
+            if not coach:raise ValueError('Настройки доступны тренеру')
+            lang=data.get('language');hours=data.get('reminderHours')
+            if lang not in ['ru','en','kaz'] or type(hours)!=int or hours not in [1,3]:raise ValueError('Проверьте настройки')
+            user=read_user(db,uid)
+            user.update(language=lang,reminderHours=hours)
+            save_user(db,user)
+        elif action=='request':
             if coach:raise ValueError('Заявка доступна игроку')
             target=read_user(db,int(data['coach']))
             if not target or target.get('role')!='coach' or target.get('step')!='done' or target.get('cityId')!=user.get('cityId'):raise ValueError('Тренер недоступен')
@@ -100,9 +112,9 @@ def perform(user,action,data):
             if app_url.startswith('https://'):
                 url=urlsplit(app_url);query=dict(parse_qsl(url.query));query['page']='requests'
                 link=urlunsplit((url.scheme,url.netloc,url.path,urlencode(query),url.fragment))
-                markup={'inline_keyboard':[[{'text':'📩 Открыть заявки','web_app':{'url':link}}]]}
+                markup={'inline_keyboard':[[{'text':tr(language(db,target['telegramId']),'bot.requests'),'web_app':{'url':link}}]]}
             comment=str(data.get('comment','')).strip()[:500] or 'Не указан'
-            send(db,target['telegramId'],f"📩 Новая заявка на тренировки\n\n👤 Ученик: {user['fullName']}\n📍 Город: {user.get('city','—')}\n\n💬 Комментарий:\n{comment}\n\nПримите или отклоните заявку в TopCoach.",markup)
+            send(db,target['telegramId'],tr(language(db,target['telegramId']),'bot.request',player=user['fullName'],city=user.get('city','—'),comment=comment),markup)
         elif action in ['decision','group','edit_group','assign','rename','delete','payment','comment','student_name','attendance','cancel']:
             if not coach:raise ValueError('Действие доступно тренеру')
             if action=='decision':
@@ -152,14 +164,15 @@ def perform(user,action,data):
                         g=next((g for g in state['groups'] if g['coach']==uid and pid in g['members']),None)
                         state['payments'].append(dict(id=ident(),nonce=nonce,coach=uid,player=pid,name=state.get('names',{}).get(key,read_user(db,pid)['fullName']),hours=hours,amount=int(amount*100),date=paid.isoformat(),created=time.time(),payer=required(data.get('payer'),120),comment=str(data.get('comment',''))[:500],group=g['name'] if g else 'Без группы',type=g['type'] if g else 'Не назначен'))
                         state['balances'][key]=(round(state['balances'].get(key,0)*60)+hours*60)/60
-                        send(db,pid,f"✅ Тренер {user['fullName']} добавил {hours} ч.\n💳 Оплачено: {amount:,.2f} ₸\n📅 Дата оплаты: {paid.isoformat()}\n🎾 На балансе: {round(state['balances'][key]*60)} мин.")
+                        lang=language(db,pid)
+                        send(db,pid,tr(lang,'bot.payment',coach=user['fullName'],duration=duration_text(hours*60,lang),amount=f'{amount:,.2f}',date=paid.isoformat(),balance=duration_text(state['balances'][key]*60,lang)))
             else:
                 s=next((s for s in state['sessions'] if s['id']==data.get('id') and s['coach']==uid),None)
                 if not s or s['status']!='scheduled':raise ValueError('Тренировка завершена или недоступна')
                 if action=='cancel':
                     if s['begins']-time.time()<=86400:raise ValueError('Отмена доступна более чем за 24 часа')
                     s['reason']=required(data.get('reason'),500);s['status']='cancelled'
-                    for pid in set([uid]+s['members']):send(db,pid,f"Тренировка «{s['name']}» {s['date']} отменена. Причина: {s['reason']}. Часы не снимутся.")
+                    for pid in set([uid]+s['members']):send(db,pid,tr(language(db,pid),'bot.cancelled',name=s['name'],date=s['date'],reason=s['reason']))
                 else:
                     pid=int(data['player'])
                     if pid not in s['members'] or type(data.get('present'))!=bool:raise ValueError('Некорректный участник')
@@ -168,7 +181,7 @@ def perform(user,action,data):
         elif action=='absence':
             s=next((s for s in state['sessions'] if s['id']==data.get('id') and uid in s['members']),None)
             if not s or s['status']!='scheduled' or s['begins']-time.time()<86400:raise ValueError('До занятия осталось менее суток')
-            if uid not in s['absent']:s['absent'].append(uid);send(db,s['coach'],f"{user['fullName']} не придёт на {s['name']} {s['date']}.")
+            if uid not in s['absent']:s['absent'].append(uid);send(db,s['coach'],tr(language(db,s['coach']),'bot.absence',player=user['fullName'],name=s['name'],date=s['date']))
         elif action!='view':raise ValueError('Неизвестное действие')
         db.execute('UPDATE crm SET data=? WHERE id=1',(json.dumps(state,ensure_ascii=False),))
         return state_view(state,user,db)

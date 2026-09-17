@@ -59,7 +59,7 @@ class CRMTests(unittest.TestCase):
    texts=[p.get('text','') for p in payloads]
    self.assertTrue(any('Coach принял вашу заявку' in t for t in texts))
    self.assertTrue(any('добавил вас в группу' in t and 'Ближайшая тренировка' in t for t in texts))
-   self.assertEqual(sum('добавил 3 ч' in t for t in texts),1)
+   self.assertEqual(sum('добавил 3 часа' in t for t in texts),1)
    state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data']);s=state['sessions'][0]
    tick(state,db,s['begins']+1);tick(state,db,s['begins']+2)
    payloads=[json.loads(r['payload']) for r in db.execute('SELECT payload FROM outbox').fetchall()]
@@ -112,7 +112,7 @@ class CRMTests(unittest.TestCase):
  def test_duration_and_multiple_groups(self):
   gid=self.setup_group()
   original=perform(self.coach,'view',{})['groups'][0]
-  for minutes in [30,60,90,120]:
+  for minutes in [60,90,120,150]:
    data={k:original[k] for k in ['name','place','start','end','days','time','type']}
    data.update(durationMinutes=minutes,members=[20,20])
    result=perform(self.coach,'group',data);g=result['groups'][-1]
@@ -124,7 +124,7 @@ class CRMTests(unittest.TestCase):
   self.assertEqual(len(perform(self.player,'view',{})['groups']),5)
   perform(self.coach,'assign',dict(id=gid,player=20))
   self.assertEqual(perform(self.coach,'view',{})['groups'][0]['members'],[20])
-  for value in [0,1441,-30,True,'90',None]:
+  for value in [0,5,30,59,1441,-30,True,'90',None]:
    with self.assertRaises(ValueError):perform(self.coach,'edit_group',dict(id=gid,durationMinutes=value))
   with self.assertRaises(ValueError):perform(self.other,'edit_group',dict(id=gid,durationMinutes=90))
   with self.assertRaises(ValueError):perform(self.coach,'edit_group',dict(id=gid,members=[30]))
@@ -139,7 +139,7 @@ class CRMTests(unittest.TestCase):
    self.assertEqual(result['groups'][0]['durationMinutes'],120)
    self.assertEqual(result['sessions'][0]['ends'],future['ends'])
   with patch('backend.crm.time.time',return_value=future['ends']):
-   result=perform(self.coach,'edit_group',dict(id=gid,durationMinutes=30))
+   result=perform(self.coach,'edit_group',dict(id=gid,durationMinutes=60))
    self.assertEqual(result['sessions'][0]['status'],'completed')
    self.assertEqual(result['sessions'][0]['ends'],future['ends'])
 
@@ -159,7 +159,7 @@ class CRMTests(unittest.TestCase):
  def test_edit_adds_existing_student_and_individual_limit(self):
   self.setup_group();original=perform(self.coach,'view',{})['groups'][0]
   data={k:original[k] for k in ['name','place','start','end','days','time']}
-  data.update(type='Индивидуальная',durationMinutes=30)
+  data.update(type='Индивидуальная',durationMinutes=60)
   g=perform(self.coach,'group',data)['groups'][-1]
   result=perform(self.coach,'edit_group',dict(id=g['id'],members=[20,20]))
   self.assertEqual(result['groups'][-1]['members'],[20])
@@ -176,7 +176,10 @@ class CRMTests(unittest.TestCase):
   from unittest.mock import patch
   gid=self.setup_group()
   perform(self.coach,'payment',dict(player=20,hours=1,amount='100',date=datetime.now(TZ).date().isoformat(),payer='Player',nonce='five'))
-  s=perform(self.coach,'edit_group',dict(id=gid,durationMinutes=5))['sessions'][0]
+  with connect() as db:
+   state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data'])
+   s=state['sessions'][0];s.update(ends=s['begins']+300,durationMinutes=5)
+   db.execute('UPDATE crm SET data=? WHERE id=1',(json.dumps(state),))
   self.assertEqual(s['ends']-s['begins'],300)
   with patch('backend.crm.time.time',return_value=s['ends']-1):
    self.assertEqual(perform(self.coach,'view',{})['sessions'][0]['status'],'scheduled')
@@ -201,3 +204,62 @@ class CRMTests(unittest.TestCase):
     state['sessions']=[dict(original,status='scheduled',begins=1000,ends=1000+minutes*60,absent=absent)]
     tick(state,db,1000+minutes*60)
     self.assertEqual(round(state['balances']['10:20']*60),expected)
+
+ def test_coach_settings_persist_validate_and_remind_once(self):
+  self.setup_group()
+  with self.assertRaises(ValueError):perform(self.player,'settings',dict(language='en',reminderHours=1))
+  for lang,hours in [('fr',1),('en',2),('en',True)]:
+   with self.assertRaises(ValueError):perform(self.coach,'settings',dict(language=lang,reminderHours=hours))
+  result=perform(self.coach,'settings',dict(language='en',reminderHours=1))
+  self.assertEqual(result['user']['language'],'en')
+  with connect() as db:
+   from backend.service import read_user
+   coach=read_user(db,10)
+   self.assertEqual(coach['reminderHours'],1)
+   state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data']);s=state['sessions'][0]
+   db.execute('DELETE FROM outbox')
+   tick(state,db,s['begins']-3*3600)
+   self.assertEqual(db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],0)
+   tick(state,db,s['begins']-3600);tick(state,db,s['begins']-3599)
+   messages=[json.loads(r['payload']) for r in db.execute('SELECT payload FROM outbox').fetchall()]
+   self.assertEqual(len(messages),2)
+   self.assertIn('Training starts in 1 h',next(m['text'] for m in messages if m['chat_id']==10))
+   self.assertIn('До тренировки 1 ч',next(m['text'] for m in messages if m['chat_id']==20))
+   # Changing reminder preference never repeats an already sent reminder.
+   coach['reminderHours']=3;save_user(db,coach)
+   tick(state,db,s['begins']-3*3600)
+   self.assertEqual(db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],2)
+
+ def test_minimum_duration_and_readable_balance(self):
+  from backend.crm import duration
+  from backend.i18n import duration_text
+  for value in [5,30,59]:
+   with self.assertRaises(ValueError):duration(value)
+  self.assertEqual(duration(90),90)
+  for minutes,expected in [(90,'1 час 30 минут'),(120,'2 часа'),(305,'5 часов 5 минут'),(11,'11 минут'),(21,'21 минута'),(0,'0 минут')]:
+   self.assertEqual(duration_text(minutes),expected)
+  self.assertEqual(duration_text(90,'en'),'1 hour 30 minutes')
+  self.assertEqual(duration_text(90,'kaz'),'1 сағат 30 минут')
+  self.setup_group()
+  with connect() as db:
+   state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data']);s=state['sessions'][0]
+   state['balances']['10:20']=2.5
+   tick(state,db,s['ends'])
+   texts=[json.loads(r['payload']).get('text','') for r in db.execute('SELECT payload FROM outbox').fetchall()]
+   self.assertTrue(any('Остаток: 1 час 30 минут.' in text for text in texts))
+
+ def test_minimum_migration_preserves_history(self):
+  self.setup_group()
+  with connect() as db:
+   state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data'])
+   state['groups'][0]['durationMinutes']=5
+   future=state['sessions'][0];future.update(durationMinutes=5,ends=future['begins']+300)
+   old=dict(future,id='old',status='completed',begins=1000,ends=1300)
+   state['sessions'].append(old)
+   db.execute('UPDATE crm SET data=? WHERE id=1',(json.dumps(state),))
+   db.execute('DELETE FROM migrations WHERE id=?',('group-duration-min60-v1',))
+  initialize();initialize()
+  view=perform(self.coach,'view',{})
+  self.assertEqual(view['groups'][0]['durationMinutes'],60)
+  self.assertEqual(view['sessions'][0]['ends']-view['sessions'][0]['begins'],3600)
+  self.assertEqual(view['sessions'][1]['ends'],1300)

@@ -1,5 +1,5 @@
 """PostgreSQL in production, SQLite for local tests; serialized CRM transactions."""
-import os, sqlite3, json
+import os, sqlite3, json, time
 from pathlib import Path
 
 class Database:
@@ -42,6 +42,15 @@ def initialize():
                 session.setdefault('durationMinutes',int((session['ends']-session['begins'])/60))
             db.execute('UPDATE crm SET data=? WHERE id=1',(json.dumps(state,ensure_ascii=False),))
             db.execute('INSERT INTO migrations VALUES (?)',('group-duration-v1',))
+        if not db.execute('SELECT id FROM migrations WHERE id=?',('group-duration-min60-v1',)).fetchone():
+            state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data'])
+            for group in state['groups']:
+                if group.get('durationMinutes',60)<60:group['durationMinutes']=60
+            for session in state['sessions']:
+                if session['status']=='scheduled' and session['begins']>time.time() and session['ends']-session['begins']<3600:
+                    session.update(durationMinutes=60,ends=session['begins']+3600)
+            db.execute('UPDATE crm SET data=? WHERE id=1',(json.dumps(state,ensure_ascii=False),))
+            db.execute('INSERT INTO migrations VALUES (?)',('group-duration-min60-v1',))
         path=Path(os.getenv('DB_PATH','.data/topcoach.sqlite3'))
         if db.pg and path.exists():
             db.execute('BEGIN IMMEDIATE')

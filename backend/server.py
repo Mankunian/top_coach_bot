@@ -114,6 +114,10 @@ class Handler(SimpleHTTPRequestHandler):
                     user.update(venueId=venue_id or None,venue=selected['name'] if selected else str(data.get('venue','' if changed else user.get('venue','')))[:250],address=selected['address'] if selected else str(data.get('address','' if changed else user.get('address','')))[:250])
                     user.pop('customVenue',None)
                 with connect() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    current=read_user(db,user['telegramId'])
+                    for setting in ['language','reminderHours']:
+                        if setting in current:user[setting]=current[setting]
                     save_user(db, user)
                 return self.result(200, user)
             return self.result(404, {'error': 'Not found'})
