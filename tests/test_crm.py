@@ -87,3 +87,24 @@ class CRMTests(unittest.TestCase):
   self.assertIn('Player',payload['text']);self.assertIn('Вечерняя группа',payload['text'])
   self.assertIn('page=requests',payload['reply_markup']['inline_keyboard'][0][0]['web_app']['url'])
   self.assertIn('source=bot',payload['reply_markup']['inline_keyboard'][0][0]['web_app']['url'])
+
+ def test_refresh_at_end_persists_completion_once(self):
+  from unittest.mock import patch
+  self.setup_group()
+  perform(self.coach,'payment',dict(player=20,hours=2,amount='100',date=datetime.now(TZ).date().isoformat(),payer='Player',nonce='end-test'))
+  session=perform(self.coach,'view',{})['sessions'][0]
+  expected=datetime.fromisoformat(session['date']+'T19:00:00+05:00').timestamp()
+  self.assertEqual(session['begins'],expected)
+  self.assertEqual(session['ends'],expected+3600)
+  with patch('backend.crm.time.time',return_value=session['ends']-0.001):
+   self.assertEqual(perform(self.coach,'view',{})['sessions'][0]['status'],'scheduled')
+  with patch('backend.crm.time.time',return_value=session['ends']):
+   for user in [self.coach,self.player,self.coach]:
+    refreshed=perform(user,'view',{})
+    self.assertEqual(refreshed['sessions'][0]['status'],'completed')
+    self.assertEqual(refreshed['students'][0]['hours'],1)
+  with connect() as db:
+   persisted=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data'])
+   self.assertEqual(persisted['sessions'][0]['status'],'completed')
+   messages=[json.loads(r['payload']) for r in db.execute('SELECT payload FROM outbox').fetchall()]
+   self.assertEqual(sum('завершена' in m.get('text','') for m in messages),2)
