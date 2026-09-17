@@ -48,7 +48,7 @@ class Handler(SimpleHTTPRequestHandler):
         if route.path == '/health':
             with connect() as db:
                 db.execute('SELECT 1')
-            return self.result(200, {'status': 'ok', 'version':'crm-4', 'database':'postgresql' if db.pg else 'sqlite'})
+            return self.result(200, {'status': 'ok', 'version':'crm-5', 'database':'postgresql' if db.pg else 'sqlite'})
         if route.path == '/api/cities':
             return self.result(200, cities())
         if route.path == '/api/venues':
@@ -104,7 +104,14 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.result(400, {'error': 'Проверьте ФИО и описание.'})
                 city=next((c for c in cities() if c['id']==data.get('cityId',user.get('cityId'))),None)
                 if not city: return self.result(400, {'error':'Выберите город'})
-                user.update(fullName=name.strip(), bio=bio.strip(),cityId=city['id'],cityCode=city['code'],city=city['name'],venue=str(data.get('venue',user.get('venue','')))[:250],address=str(data.get('address',user.get('address','')))[:250])
+                changed=city['id']!=user.get('cityId')
+                venue_id=data.get('venueId')
+                selected=next((v for v in venues(city['id']) if v['id']==venue_id),None) if venue_id else None
+                if venue_id and not selected:return self.result(400, {'error':'Корт не относится к выбранному городу'})
+                user.update(fullName=name.strip(),bio=bio.strip(),cityId=city['id'],cityCode=city['code'],city=city['name'])
+                if user.get('role')=='coach':
+                    user.update(venueId=venue_id or None,venue=selected['name'] if selected else str(data.get('venue','' if changed else user.get('venue','')))[:250],address=selected['address'] if selected else str(data.get('address','' if changed else user.get('address','')))[:250])
+                    user.pop('customVenue',None)
                 with connect() as db:
                     save_user(db, user)
                 return self.result(200, user)

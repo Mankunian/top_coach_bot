@@ -62,6 +62,46 @@ const venues=[
     "address": "Кабанбай батыр проспект, 53 к3а",
     "source": "https://2gis.kz/astana/search/Теннис%20теннисный%20клуб",
     "checkedAt": "2026-09-16"
+  },
+  {
+    "id": "c1ee7904-10e9-4f4f-ac16-3909d77d846b",
+    "city": "Алматы",
+    "name": "Максат",
+    "address": "Улица Абиша Кекилбайулы, 191",
+    "source": "https://2gis.kz/almaty/search/Тенисы",
+    "checkedAt": "2026-09-17"
+  },
+  {
+    "id": "c0654bdd-a145-4e01-945d-c3b6aa114aaf",
+    "city": "Алматы",
+    "name": "Эйс",
+    "address": "Микрорайон Мамыр-1, 29/10",
+    "source": "https://2gis.kz/almaty/search/Тенисы",
+    "checkedAt": "2026-09-17"
+  },
+  {
+    "id": "37728805-b57f-4860-a755-27ad19039590",
+    "city": "Алматы",
+    "name": "Jan Dosym",
+    "address": "Проспект Аль-Фараби, 71/20а",
+    "source": "https://2gis.kz/almaty/search/Тенисы",
+    "checkedAt": "2026-09-17"
+  },
+  {
+    "id": "e21fab8f-5acc-4217-8562-7ecc31f4d02b",
+    "city": "Алматы",
+    "name": "ЦСКА",
+    "address": "Микрорайон Самал-1, 1г",
+    "source": "https://2gis.kz/almaty/search/Тенисы",
+    "checkedAt": "2026-09-17"
+  },
+  {
+    "id": "07bcf673-a927-42fe-8d05-086f2b14d8d4",
+    "city": "Алматы",
+    "name": "Adk",
+    "address": "Проспект Абая, 159",
+    "source": "https://2gis.kz/almaty/search/Тенисы",
+    "checkedAt": "2026-09-17"
   }
 ];
 
