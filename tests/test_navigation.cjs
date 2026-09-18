@@ -21,8 +21,16 @@ test('browser and Telegram back/forward preserve routes, dialog back closes firs
  c.navigate('calendar');c.goBack();assert.equal(c.page,'settings');
 });
 test('all prior routes remain addressable; unknown and coach-only player links fall back',()=>{
- for(const page of ['profile','settings','reports','premium','groups','calendar'])assert.equal(app('https://example.com/?page='+page).c.page,page);
+for(const page of ['profile','settings','reports','premium','groups','calendar','student'])assert.equal(app('https://example.com/?page='+page).c.page,page);
  assert.equal(app('https://example.com/?page=unknown').c.page,'home');
  assert.equal(app('https://example.com/?page=requests','player').c.page,'home');
  assert.equal(app('https://example.com/?page=profile','player').c.page,'profile');
+});
+
+test('student route preserves the selected student id and returns to Groups',()=>{
+ const {c}=app('https://example.com/?page=calendar');
+ c.state={user:{role:'coach'},students:[{telegramId:42}]};
+ c.navigateStudent(42);
+ assert.equal(c.page,'student');assert.equal(new URL(c.window.location.href).searchParams.get('studentId'),'42');
+ c.goBack();assert.equal(c.page,'calendar');
 });
