@@ -236,5 +236,13 @@
   "Корт не относится к выбранному городу": "The court is not in the selected city",
   "Откройте приложение заново из бота.": "Reopen the app from the bot.",
   "Откройте приложение из бота после регистрации.": "Open the app from the bot after registration.",
-  "Проверьте данные запроса": "Check your input"
+  "Проверьте данные запроса": "Check your input",
+  "Главная": "Home",
+  "Календарь": "Calendar",
+  "Ещё": "More",
+  "Назад": "Back",
+  "Тренировки сегодня": "Today’s sessions",
+  "Новые заявки": "New requests",
+  "Ближайшие тренировки": "Upcoming sessions",
+  "Ближайших тренировок нет.": "No upcoming sessions."
 }

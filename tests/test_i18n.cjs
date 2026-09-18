@@ -22,7 +22,7 @@ test('coach pages render with the actual locale engine',async()=>{
  for(const [lang,label] of [['en','Settings'],['kaz','Баптаулар']]){
   await context.loadLanguage(lang);
   assert.match(context.settingsView(),new RegExp(label));
-  for(const name of ['home','requestsView','groupsView','profileView','reportsView','premiumView'])assert.equal(typeof context[name](),'string');
+  for(const name of ['home','coachHome','moreView','requestsView','groupsView','profileView','reportsView','premiumView'])assert.equal(typeof context[name](),'string');
   assert.match(context.durationField(90),/min="60"/);
  }
  await context.loadLanguage('en');
