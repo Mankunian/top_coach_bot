@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 // Execute production rendering functions without starting the Mini App or polling.
 const source=fs.readFileSync('dist/live.js','utf8');
-const context={window:{t:s=>s},html:(strings,...values)=>strings.map((s,i)=>s+(i<values.length?values[i]:'')).join(''),locale:()=> 'ru-RU',Date, state:null, day:'2026-09-17', e:String, money:String, heading:()=>'',weekCalendar:()=>'',premiumBanner:()=>'',modal:html=>{context.dialog=html}};
+const context={window:{t:s=>s},html:(strings,...values)=>strings.map((s,i)=>s+(i<values.length?values[i]:'')).join(''),locale:()=> 'ru-RU',Date, state:null, day:'2026-09-17', e:String, money:String, heading:()=>'',weekCalendar:()=>'',premiumBanner:()=>'',formatDate:value=>String(value).split('-').reverse().join('.'),modal:html=>{context.dialog=html}};
 vm.createContext(context);
 for(const name of ['sessionStatus','status','home','openSession','balanceLabel']){
  const line=source.split('\n').find(line=>line.startsWith(`function ${name}(`));
