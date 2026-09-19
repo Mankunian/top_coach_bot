@@ -11,8 +11,8 @@ def ident():return str(uuid.uuid4())
 def required(value,maxlen=250):
     if not isinstance(value,str) or not value.strip() or len(value)>maxlen:raise ValueError('Заполните обязательные поля')
     return value.strip()
-def members(state,coach):return [r['player'] for r in state['requests'] if r['coach']==coach and r['status']=='accepted' and not r.get('sessionId')]
-def coach_members(state,coach):return list(set(members(state,coach)+[r['player'] for r in state['requests'] if r['coach']==coach and r['status']=='accepted' and r.get('sessionId')]))
+def members(state,coach):return [r['player'] for r in state['requests'] if r['coach']==coach and r['status']=='accepted' and not r.get('sessionId') and not r.get('groupId')]
+def coach_members(state,coach):return list(set(members(state,coach)+[r['player'] for r in state['requests'] if r['coach']==coach and r['status']=='accepted' and (r.get('sessionId') or r.get('groupId'))]))
 def balance_key(coach,player):return str(coach)+':'+str(player)
 def date(value):return datetime.strptime(value,'%Y-%m-%d').date()
 def duration(value):
@@ -20,7 +20,8 @@ def duration(value):
     return value
 
 def assign_member(state,db,user,g,pid):
-    if type(pid)!=int or pid not in members(state,user['telegramId']):raise ValueError('Ученик ещё не принят')
+    accepted=pid in members(state,user['telegramId']) or any(r['coach']==user['telegramId'] and r['player']==pid and r['status']=='accepted' and r.get('groupId')==g['id'] for r in state['requests'])
+    if type(pid)!=int or not accepted:raise ValueError('Ученик ещё не принят')
     if pid in g['members']:return
     if g['type']=='Индивидуальная' and g['members']:raise ValueError('В индивидуальной группе может быть только один ученик')
     g['members'].append(pid)
@@ -81,17 +82,20 @@ def state_view(state,user,db):
     profiles=[json.loads(r['data']) for r in db.execute('SELECT data FROM users').fetchall()]
     people={u['telegramId']:u for u in profiles}
     public=lambda u:{k:u.get(k,'') for k in ['telegramId','fullName','city','cityId','bio','venue','address']}
-    req=[r for r in state['requests'] if r['coach']==uid] if coach else [r for r in state['requests'] if r['player']==uid]
+    all_requests=[r for r in state['requests'] if r['coach']==uid] if coach else [r for r in state['requests'] if r['player']==uid]
+    # Group join requests are handled only on their group detail screen.
+    req=[r for r in all_requests if not r.get('groupId')]
     ids=coach_members(state,uid) if coach else [uid]
     def card(pid):
-        u=people.get(pid,{});c=uid if coach else next((r['coach'] for r in req if r['status']=='accepted'),0)
+        u=people.get(pid,{});c=uid if coach else next((r['coach'] for r in all_requests if r['status']=='accepted'),0)
         return dict(public(u),displayName=state.get('names',{}).get(balance_key(c,pid),u.get('fullName','Игрок')),hours=state['balances'].get(balance_key(c,pid),0),comment=state['comments'].get(balance_key(c,pid),''),username=u.get('username'))
     visible_groups=[g for g in state['groups'] if g['coach']==uid or (not coach and uid in g['members'] and g.get('showToStudents',True))]
     visible_group_ids={g['id'] for g in visible_groups}
     public_groups=[g for g in state['groups'] if g.get('showToStudents',True) and g.get('city')==user.get('city')]
     public_group_ids={g['id'] for g in public_groups}
     named_requests=[dict(r,playerName=people.get(r['player'],{}).get('fullName','Игрок'),coachName=people.get(r['coach'],{}).get('fullName','Тренер'),sessionName=next((s['name'] for s in state['sessions'] if s['id']==r.get('sessionId')),'') if r.get('sessionId') else '') for r in req]
-    return dict(user=user,cities=cities(),paidTotal=sum(p['amount'] for p in state['payments'] if p['player']==uid and any(r['coach']==p['coach'] and r['status']=='accepted' for r in req)) if not coach else 0,requests=named_requests,students=[card(pid) for pid in ids if pid in people],groups=visible_groups,sessions=[s for s in state['sessions'] if s['coach']==uid or (not coach and uid in s['members'] and s['group'] in visible_group_ids)],publicSessions=[s for s in state['sessions'] if not coach and s['group'] in public_group_ids and s['status']=='scheduled' and s['ends']>time.time()],payments=[p for p in state['payments'] if p['coach']==uid] if coach else [],trainers=[dict(public(u),username=u.get('username') if any(r['coach']==u['telegramId'] and r['status']=='accepted' for r in req) else None) for u in profiles if u.get('role')=='coach' and u.get('step')=='done' and u.get('cityId')==user.get('cityId')])
+    group_join_requests=[dict(r,playerName=people.get(r['player'],{}).get('fullName','Игрок')) for r in all_requests if coach and r.get('groupId') and r['status']=='pending']
+    return dict(user=user,cities=cities(),paidTotal=sum(p['amount'] for p in state['payments'] if p['player']==uid and any(r['coach']==p['coach'] and r['status']=='accepted' for r in all_requests)) if not coach else 0,requests=named_requests,groupJoinRequests=group_join_requests,students=[card(pid) for pid in ids if pid in people],groups=visible_groups,sessions=[s for s in state['sessions'] if s['coach']==uid or (not coach and uid in s['members'] and s['group'] in visible_group_ids)],publicGroups=public_groups if not coach else [],payments=[p for p in state['payments'] if p['coach']==uid] if coach else [],trainers=[dict(public(u),username=u.get('username') if any(r['coach']==u['telegramId'] and r['status']=='accepted' for r in req) else None) for u in profiles if u.get('role')=='coach' and u.get('step')=='done' and u.get('cityId')==user.get('cityId')])
 def perform(user,action,data):
     with connect() as db:
         db.execute('BEGIN IMMEDIATE');state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data']);tick(state,db)
@@ -109,18 +113,23 @@ def perform(user,action,data):
             save_user(db,user)
         elif action=='request':
             if coach:raise ValueError('Заявка доступна игроку')
-            requested_session=data.get('sessionId');session=next((item for item in state['sessions'] if item['id']==requested_session),None) if requested_session else None
-            target=read_user(db,session['coach'] if session else int(data['coach']))
+            requested_session=data.get('sessionId');requested_group=data.get('groupId')
+            session=next((item for item in state['sessions'] if item['id']==requested_session),None) if requested_session else None
+            group=next((item for item in state['groups'] if item['id']==requested_group),None) if requested_group else None
+            target=read_user(db,(group or session)['coach'] if (group or session) else int(data['coach']))
             if not target or target.get('role')!='coach' or target.get('step')!='done' or target.get('cityId')!=user.get('cityId'):raise ValueError('Тренер недоступен')
             if session and (session['status']!='scheduled' or not any(g['id']==session['group'] and g.get('showToStudents',True) for g in state['groups'])):raise ValueError('Тренировка недоступна')
+            if requested_group and (not group or not group.get('showToStudents',True)):raise ValueError('Группа недоступна')
             if requested_session:
                 if any(r['player']==uid and r.get('sessionId')==requested_session and r['status'] in ['pending','accepted'] for r in state['requests']):raise ValueError('Заявка уже отправлена или принята')
-            elif any(r['player']==uid and not r.get('sessionId') and r['status'] in ['pending','accepted'] for r in state['requests']):raise ValueError('Заявка уже отправлена или принята')
-            state['requests'].append(dict(id=ident(),coach=target['telegramId'],player=uid,status='pending',comment=str(data.get('comment',''))[:500],sessionId=requested_session or '',created=time.time()))
+            elif requested_group:
+                if any(r['player']==uid and r.get('groupId')==requested_group and r['status'] in ['pending','accepted'] for r in state['requests']):raise ValueError('Join request already sent or approved')
+            elif any(r['player']==uid and not r.get('sessionId') and not r.get('groupId') and r['status'] in ['pending','accepted'] for r in state['requests']):raise ValueError('Заявка уже отправлена или принята')
+            state['requests'].append(dict(id=ident(),coach=target['telegramId'],player=uid,status='pending',comment=str(data.get('comment',''))[:500],sessionId=requested_session or '',groupId=requested_group or '',created=time.time()))
             app_url=os.getenv('MINI_APP_URL','')
             markup=None
             if app_url.startswith('https://'):
-                url=urlsplit(app_url);query=dict(parse_qsl(url.query));query['page']='requests'
+                url=urlsplit(app_url);query=dict(parse_qsl(url.query));query['page']='groups' if requested_group else 'requests'
                 link=urlunsplit((url.scheme,url.netloc,url.path,urlencode(query),url.fragment))
                 markup={'inline_keyboard':[[{'text':tr(language(db,target['telegramId']),'bot.requests'),'web_app':{'url':link}}]]}
             comment=str(data.get('comment','')).strip()[:500] or 'Не указан'
@@ -131,6 +140,10 @@ def perform(user,action,data):
                 r=next((r for r in state['requests'] if r['id']==data.get('id') and r['coach']==uid),None)
                 if not r or r['status']!='pending' or data.get('status') not in ['accepted','rejected']:raise ValueError('Заявка недоступна')
                 r['status']=data['status'];r['decided']=time.time();state['comments'][balance_key(uid,r['player'])]=r['comment']
+                if r['status']=='accepted' and r.get('groupId'):
+                    group=next((item for item in state['groups'] if item['id']==r['groupId'] and item['coach']==uid),None)
+                    if not group:raise ValueError('Группа недоступна')
+                    assign_member(state,db,user,group,r['player'])
                 if r['status']=='accepted' and r.get('sessionId'):
                     session=next((item for item in state['sessions'] if item['id']==r['sessionId'] and item['coach']==uid),None)
                     if not session or session['status']!='scheduled':raise ValueError('Тренировка недоступна')
@@ -167,7 +180,7 @@ def perform(user,action,data):
                         if s['group']==g['id'] and s['status']=='scheduled':s['status']='cancelled';s['reason']='Группа удалена'
             elif action in ['payment','comment','student_name']:
                 pid=int(data['player'])
-                if pid not in members(state,uid):raise ValueError('Ученик недоступен')
+                if pid not in coach_members(state,uid):raise ValueError('Ученик недоступен')
                 key=balance_key(uid,pid)
                 if action=='student_name':state.setdefault('names',{})[key]=required(data.get('name'),120)
                 elif action=='comment':state['comments'][key]=str(data.get('comment',''))[:500]
