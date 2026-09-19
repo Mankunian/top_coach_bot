@@ -128,18 +128,20 @@ def perform(user,action,data):
                 name=required(data.get('name'),60);place=required(data.get('place'));start=date(data['start']);end=date(data['end']) if data.get('end') else None
                 days=data.get('days',[]);kind=data.get('type');clock=datetime.strptime(data['time'],'%H:%M')
                 if not days or any(type(d)!=int or d not in range(7) for d in days) or kind not in ['Групповая','Индивидуальная'] or (end and end<start):raise ValueError('Проверьте расписание')
-                g=dict(id=ident(),coach=uid,name=name,place=place,city=user.get('city'),start=start.isoformat(),end=end.isoformat() if end else '',days=days,time=clock.strftime('%H:%M'),type=kind,durationMinutes=duration(data.get('durationMinutes',60)),showToStudents=bool(data.get('showToStudents',True)),members=[])
+                g=dict(id=ident(),coach=uid,name=name,place=place,city=user.get('city'),start=start.isoformat(),end=end.isoformat() if end else '',days=days,time=clock.strftime('%H:%M'),type=kind,durationMinutes=duration(data.get('durationMinutes',60)),showToStudents=bool(data.get('showToStudents',True)),syncToCalendar=bool(data.get('syncToCalendar',True)),members=[])
                 state['groups'].append(g);generate(state,g);add_selected_members(state,db,user,g,data)
             elif action in ['assign','rename','delete','edit_group']:
                 g=own_group()
                 if action=='edit_group':
                     g['name']=required(data.get('name',g['name']),60)
+                    g['place']=required(data.get('place',g['place']))
                     g['durationMinutes']=duration(data.get('durationMinutes',g.get('durationMinutes',60)))
                     g['showToStudents']=bool(data.get('showToStudents',g.get('showToStudents',True)))
+                    g['syncToCalendar']=bool(data.get('syncToCalendar',g.get('syncToCalendar',True)))
                     # Preserve started/completed sessions; change only future defaults.
                     for session in state['sessions']:
                         if session['group']==g['id'] and session['status']=='scheduled' and session['begins']>time.time():
-                            session.update(name=g['name'],durationMinutes=g['durationMinutes'],ends=session['begins']+g['durationMinutes']*60)
+                            session.update(name=g['name'],place=g['place'],durationMinutes=g['durationMinutes'],ends=session['begins']+g['durationMinutes']*60)
                     add_selected_members(state,db,user,g,data)
                 if action=='assign':assign_member(state,db,user,g,int(data['player']))
                 if action=='rename':

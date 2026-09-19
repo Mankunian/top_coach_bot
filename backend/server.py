@@ -36,7 +36,7 @@ class Handler(SimpleHTTPRequestHandler):
     def calendar_file(self, group_id):
         with connect() as db:
             state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data'])
-        group=next((item for item in state['groups'] if item['id']==group_id and item.get('showToStudents',True)),None)
+        group=next((item for item in state['groups'] if item['id']==group_id and item.get('showToStudents',True) and item.get('syncToCalendar',True)),None)
         if not group:return self.result(404,{'error':'Calendar not found'})
         sessions=[item for item in state['sessions'] if item['group']==group_id and item['status']!='cancelled']
         def clean(value):return str(value).replace('\\','\\\\').replace(';','\\;').replace(',','\\,').replace('\n','\\n')

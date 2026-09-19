@@ -4,7 +4,7 @@ context.html=(strings,...values)=>strings.map((part,index)=>part+(index<values.l
 vm.createContext(context);vm.runInContext(fs.readFileSync('dist/calendar.js','utf8'),context);
 test('month calendar displays session marker and opens day details',()=>{
  const markup=vm.runInContext("calendarMode='month';calendarCursor=new Date(2026,8,1);calendarView()",context);
- assert.match(markup,/calendar-dot group/);assert.match(markup,/openCalendarDay\('2026-09-17'\)/);
+ assert.match(markup,/calendar-count">1/);assert.match(markup,/openCalendarDay\('2026-09-17'\)/);
  vm.runInContext("openCalendarDay('2026-09-17')",context);
  assert.match(dialogs.pop(),/Корт 2/);
 });
@@ -12,5 +12,5 @@ test('week calendar covers seven dates and keeps session detail participant link
  const cells=vm.runInContext("calendarMode='week';calendarCursor=new Date(2026,8,17);calendarCells()",context);
  assert.equal((cells.match(/calendar-day/g)||[]).length,7);
  const details=context.sessionDetailCard(context.state.sessions[0]);
- assert.match(details,/navigateStudent\(20\)/);assert.match(details,/90 мин/);
+ assert.match(details,/navigateStudent\(20\)/);assert.match(details,/90 min/);
 });
