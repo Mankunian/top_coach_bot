@@ -71,7 +71,7 @@ def process_update(update):
         db.execute('BEGIN IMMEDIATE')
         if db.execute('SELECT 1 FROM updates WHERE id=?', (update['update_id'],)).fetchone():
             return
-        user = read_user(db, uid) or {'id': str(uuid.uuid4()), 'telegramId': uid, 'fullName': ' '.join(filter(None, [sender.get('first_name'), sender.get('last_name')])) or 'Игрок', 'username': sender.get('username'), 'step': 'welcome', 'bio': ''}
+        user = read_user(db, uid) or {'id': str(uuid.uuid4()), 'telegramId': uid, 'fullName': ' '.join(filter(None, [sender.get('first_name'), sender.get('last_name')])) or 'Player', 'username': sender.get('username'), 'step': 'welcome', 'bio': '', 'language': 'en'}
         data = callback.get('data', '') if callback else ''
         text = message.get('text', '')
         if callback:

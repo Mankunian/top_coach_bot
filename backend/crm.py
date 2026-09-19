@@ -85,7 +85,9 @@ def state_view(state,user,db):
     def card(pid):
         u=people.get(pid,{});c=uid if coach else next((r['coach'] for r in req if r['status']=='accepted'),0)
         return dict(public(u),displayName=state.get('names',{}).get(balance_key(c,pid),u.get('fullName','Игрок')),hours=state['balances'].get(balance_key(c,pid),0),comment=state['comments'].get(balance_key(c,pid),''),username=u.get('username'))
-    return dict(user=user,cities=cities(),paidTotal=sum(p['amount'] for p in state['payments'] if p['player']==uid and any(r['coach']==p['coach'] and r['status']=='accepted' for r in req)) if not coach else 0,requests=[dict(r,playerName=people.get(r['player'],{}).get('fullName','Игрок'),coachName=people.get(r['coach'],{}).get('fullName','Тренер')) for r in req],students=[card(pid) for pid in ids if pid in people],groups=[g for g in state['groups'] if g['coach']==uid or (not coach and uid in g['members'])],sessions=[s for s in state['sessions'] if s['coach']==uid or (not coach and uid in s['members'])],payments=[p for p in state['payments'] if p['coach']==uid] if coach else [],trainers=[dict(public(u),username=u.get('username') if any(r['coach']==u['telegramId'] and r['status']=='accepted' for r in req) else None) for u in profiles if u.get('role')=='coach' and u.get('step')=='done' and u.get('cityId')==user.get('cityId')])
+    visible_groups=[g for g in state['groups'] if g['coach']==uid or (not coach and uid in g['members'] and g.get('showToStudents',True))]
+    visible_group_ids={g['id'] for g in visible_groups}
+    return dict(user=user,cities=cities(),paidTotal=sum(p['amount'] for p in state['payments'] if p['player']==uid and any(r['coach']==p['coach'] and r['status']=='accepted' for r in req)) if not coach else 0,requests=[dict(r,playerName=people.get(r['player'],{}).get('fullName','Игрок'),coachName=people.get(r['coach'],{}).get('fullName','Тренер')) for r in req],students=[card(pid) for pid in ids if pid in people],groups=visible_groups,sessions=[s for s in state['sessions'] if s['coach']==uid or (not coach and uid in s['members'] and s['group'] in visible_group_ids)],payments=[p for p in state['payments'] if p['coach']==uid] if coach else [],trainers=[dict(public(u),username=u.get('username') if any(r['coach']==u['telegramId'] and r['status']=='accepted' for r in req) else None) for u in profiles if u.get('role')=='coach' and u.get('step')=='done' and u.get('cityId')==user.get('cityId')])
 def perform(user,action,data):
     with connect() as db:
         db.execute('BEGIN IMMEDIATE');state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data']);tick(state,db)
@@ -126,13 +128,14 @@ def perform(user,action,data):
                 name=required(data.get('name'),60);place=required(data.get('place'));start=date(data['start']);end=date(data['end']) if data.get('end') else None
                 days=data.get('days',[]);kind=data.get('type');clock=datetime.strptime(data['time'],'%H:%M')
                 if not days or any(type(d)!=int or d not in range(7) for d in days) or kind not in ['Групповая','Индивидуальная'] or (end and end<start):raise ValueError('Проверьте расписание')
-                g=dict(id=ident(),coach=uid,name=name,place=place,city=user.get('city'),start=start.isoformat(),end=end.isoformat() if end else '',days=days,time=clock.strftime('%H:%M'),type=kind,durationMinutes=duration(data.get('durationMinutes',60)),members=[])
+                g=dict(id=ident(),coach=uid,name=name,place=place,city=user.get('city'),start=start.isoformat(),end=end.isoformat() if end else '',days=days,time=clock.strftime('%H:%M'),type=kind,durationMinutes=duration(data.get('durationMinutes',60)),showToStudents=bool(data.get('showToStudents',True)),members=[])
                 state['groups'].append(g);generate(state,g);add_selected_members(state,db,user,g,data)
             elif action in ['assign','rename','delete','edit_group']:
                 g=own_group()
                 if action=='edit_group':
                     g['name']=required(data.get('name',g['name']),60)
                     g['durationMinutes']=duration(data.get('durationMinutes',g.get('durationMinutes',60)))
+                    g['showToStudents']=bool(data.get('showToStudents',g.get('showToStudents',True)))
                     # Preserve started/completed sessions; change only future defaults.
                     for session in state['sessions']:
                         if session['group']==g['id'] and session['status']=='scheduled' and session['begins']>time.time():

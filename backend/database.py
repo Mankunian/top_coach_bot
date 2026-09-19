@@ -51,6 +51,11 @@ def initialize():
                     session.update(durationMinutes=60,ends=session['begins']+3600)
             db.execute('UPDATE crm SET data=? WHERE id=1',(json.dumps(state,ensure_ascii=False),))
             db.execute('INSERT INTO migrations VALUES (?)',('group-duration-min60-v1',))
+        if not db.execute('SELECT id FROM migrations WHERE id=?',('group-visibility-v1',)).fetchone():
+            state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data'])
+            for group in state['groups']:group.setdefault('showToStudents',True)
+            db.execute('UPDATE crm SET data=? WHERE id=1',(json.dumps(state,ensure_ascii=False),))
+            db.execute('INSERT INTO migrations VALUES (?)',('group-visibility-v1',))
         path=Path(os.getenv('DB_PATH','.data/topcoach.sqlite3'))
         if db.pg and path.exists():
             db.execute('BEGIN IMMEDIATE')

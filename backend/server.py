@@ -5,6 +5,7 @@ import os
 import threading
 import time
 import urllib.parse
+from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from .catalog import cities, venues
@@ -32,6 +33,22 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def calendar_file(self, group_id):
+        with connect() as db:
+            state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data'])
+        group=next((item for item in state['groups'] if item['id']==group_id and item.get('showToStudents',True)),None)
+        if not group:return self.result(404,{'error':'Calendar not found'})
+        sessions=[item for item in state['sessions'] if item['group']==group_id and item['status']!='cancelled']
+        def clean(value):return str(value).replace('\\','\\\\').replace(';','\\;').replace(',','\\,').replace('\n','\\n')
+        lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//TopCoach//Training Calendar//EN','CALSCALE:GREGORIAN','X-WR-CALNAME:'+clean(group['name'])]
+        for session in sessions:
+            start=session['date'].replace('-','')+'T'+session['time'].replace(':','')+'00'
+            end=datetime.fromtimestamp(session['ends'],timezone(timedelta(hours=5))).strftime('%Y%m%dT%H%M%S')
+            lines.extend(['BEGIN:VEVENT','UID:'+session['id']+'@topcoach','DTSTAMP:'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ'),'DTSTART;TZID=Asia/Almaty:'+start,'DTEND;TZID=Asia/Almaty:'+end,'SUMMARY:'+clean(session['name']),'LOCATION:'+clean(session['place']),'END:VEVENT'])
+        lines.append('END:VCALENDAR')
+        body=('\r\n'.join(lines)+'\r\n').encode()
+        self.send_response(200);self.send_header('Content-Type','text/calendar; charset=utf-8');self.send_header('Content-Disposition','attachment; filename="topcoach-'+group_id+'.ics"');self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.end_headers();self.wfile.write(body)
+
     def user(self):
         token = os.environ.get('BOT_TOKEN', '')
         if not token:
@@ -51,6 +68,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.result(200, {'status': 'ok', 'version':'crm-7', 'database':'postgresql' if db.pg else 'sqlite'})
         if route.path == '/api/cities':
             return self.result(200, cities())
+        if route.path.startswith('/calendar/') and route.path.endswith('.ics'):
+            return self.calendar_file(route.path.split('/')[-1][:-4])
         if route.path == '/api/venues':
             city_id = urllib.parse.parse_qs(route.query).get('cityId', [''])[0]
             if not any(c['id'] == city_id for c in cities()):
