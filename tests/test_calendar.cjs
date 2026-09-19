@@ -4,7 +4,7 @@ context.html=(strings,...values)=>strings.map((part,index)=>part+(index<values.l
 vm.createContext(context);vm.runInContext(fs.readFileSync('dist/calendar.js','utf8'),context);
 test('month calendar displays session marker and opens day details',()=>{
  const markup=vm.runInContext("calendarMode='month';calendarCursor=new Date(2026,8,1);calendarView()",context);
- assert.match(markup,/calendar-count">1/);assert.match(markup,/openCalendarDay\('2026-09-17'\)/);
+ assert.match(markup,/calendar-day  has-sessions/);assert.match(markup,/openCalendarDay\('2026-09-17'\)/);assert.doesNotMatch(markup,/calendar-count/);
  vm.runInContext("openCalendarDay('2026-09-17')",context);
  assert.match(dialogs.pop(),/Корт 2/);
 });
