@@ -12,17 +12,24 @@ from pathlib import Path
 from .catalog import cities, venues
 from .i18n import tr
 
-WELCOME = ('🎾 Добро пожаловать в TopCoach!\n\n'
-           'Больше тенниса — меньше рутины.\n\n'
-           '🧑‍🏫 Тренеру — ученики, группы, расписание и учёт оплат в одном месте.\n'
-           '🎾 Игроку — связь с тренером, ближайшие занятия и остаток часов.\n'
-           '👨‍👩‍👧 Родителю — занятия ребёнка под рукой.\n\n'
-           'Начнём с короткой регистрации?')
+WELCOME = ('🎾 Welcome to TopCoach!\n\n'
+           'More tennis, less admin.\n\n'
+           'Coaches manage students, groups, schedules and payments. Players stay connected to their coach and training plan.\n\n'
+           'Let’s complete a quick registration.')
 
 from .database import connect
 
 def keyboard(rows):
     return {'inline_keyboard': [[{'text': text, 'callback_data': data} for text, data in row] for row in rows]}
+
+def contact_keyboard():
+    return {'keyboard': [[{'text':'📱 Share phone number','request_contact':True}]], 'resize_keyboard':True, 'one_time_keyboard':True}
+
+def store_keyboard():
+    return {'inline_keyboard': [[
+        {'text':'Google Play','url':'https://play.google.com/store/apps/details?id=org.telegram.messenger'},
+        {'text':'App Store','url':'https://apps.apple.com/app/telegram-messenger/id686449807'}
+    ]]}
 
 def read_user(db, telegram_id):
     row = db.execute('SELECT data FROM users WHERE telegram_id=?', (telegram_id,)).fetchone()
@@ -42,21 +49,21 @@ def send(db, chat_id, text, markup=None):
     enqueue(db, 'sendMessage', payload)
 
 def show_cities(db, user):
-    send(db, user['telegramId'], '📍 В каком городе вы занимаетесь?',
+    send(db, user['telegramId'], '📍 Which city do you train in?',
          keyboard([[(c['code'] + ' · ' + c['name'], 'city:' + c['id'])] for c in cities()]))
 
 def show_venues(db, user):
     rows = [[(v['name'] + ' · ' + v['address'], 'venue:' + v['id'])] for v in venues(user['cityId'])]
-    rows += [[('✍️ Указать свою площадку', 'venue:custom')], [('Позже', 'venue:skip')]]
-    send(db, user['telegramId'], '🏟 Выберите клуб или корт. Если его пока нет в списке, укажите свой или заполните позже в Mini App.', keyboard(rows))
+    rows += [[('✍️ Enter manually', 'venue:custom')], [('Later', 'venue:skip')]]
+    send(db, user['telegramId'], '🏟 Choose your club or court. You can enter a different one manually or complete it later in the Mini App.', keyboard(rows))
 
 def finish(db, user):
     user['step'] = 'done'
     user.setdefault('registeredAt', int(time.time()))
     url = os.environ.get('MINI_APP_URL', '')
-    lang=user.get('language','ru')
+    lang=user.get('language','en')
     markup = {'inline_keyboard': [[{'text': tr(lang,'bot.open'), 'web_app': {'url': url}}]]} if url.startswith('https://') else None
-    send(db,user['telegramId'],tr(lang,'bot.ready',name=user['fullName']),markup)
+    send(db,user['telegramId'],tr(lang,'bot.ready',name=user.get('fullName') or 'there'),markup)
 
 def process_update(update):
     if not isinstance(update, dict) or not isinstance(update.get('update_id'), int):
@@ -71,24 +78,30 @@ def process_update(update):
         db.execute('BEGIN IMMEDIATE')
         if db.execute('SELECT 1 FROM updates WHERE id=?', (update['update_id'],)).fetchone():
             return
-        user = read_user(db, uid) or {'id': str(uuid.uuid4()), 'telegramId': uid, 'fullName': ' '.join(filter(None, [sender.get('first_name'), sender.get('last_name')])) or 'Player', 'username': sender.get('username'), 'step': 'welcome', 'bio': '', 'language': 'en'}
+        user = read_user(db, uid) or {'id': str(uuid.uuid4()), 'telegramId': uid, 'fullName': '', 'username': sender.get('username'), 'step': 'welcome', 'bio': '', 'language': 'en'}
         data = callback.get('data', '') if callback else ''
-        text = message.get('text', '')
+        text = message.get('text') or ''
         if callback:
             enqueue(db, 'answerCallbackQuery', {'callback_query_id': callback['id']})
         if text.split(' ')[0] == '/start':
             if user['step'] == 'done':
                 finish(db, user)
             else:
-                send(db, uid, WELCOME, keyboard([[('🚀 Пройти регистрацию', 'register')]]))
+                send(db, uid, WELCOME, keyboard([[('🚀 Start registration', 'register')]]))
+                send(db, uid, 'Need Telegram on another device?', store_keyboard())
         elif data == 'register' and user['step'] != 'done':
             user['step'] = 'role'
-            send(db, uid, '👋 Как вы будете пользоваться TopCoach?\n\nИмя возьмём из вашего Telegram-профиля. Его можно будет уточнить в Mini App.',
-                 keyboard([[('🧑‍🏫 Я тренер', 'role:coach')], [('🎾 Я игрок', 'role:player')], [('👨‍👩‍👧 Я родитель', 'role:parent')]]))
+            send(db, uid, '👋 How will you use TopCoach?', keyboard([[('🧑‍🏫 I am a coach', 'role:coach')], [('🎾 I am a player', 'role:player')], [('👨‍👩‍👧 I am a parent', 'role:parent')]]))
         elif data.startswith('role:') and user['step'] == 'role' and data[5:] in ['coach', 'player', 'parent']:
             user['role'] = data[5:]
-            user['step'] = 'city'
-            show_cities(db, user)
+            user['step'] = 'phone'
+            send(db, uid, '📱 Please share your phone number. We use it only for your coach-player connection.', contact_keyboard())
+        elif user['step']=='phone':
+            contact=message.get('contact',{})
+            if contact.get('user_id')==uid and isinstance(contact.get('phone_number'),str):
+                user['phone']=contact['phone_number'];user['step']='city';show_cities(db,user)
+            else:
+                send(db,uid,'Please tap “Share phone number” to continue.',contact_keyboard())
         elif data.startswith('city:') and user['step'] == 'city':
             city = next((c for c in cities() if c['id'] == data[5:]), None)
             if city:
@@ -121,7 +134,7 @@ def process_update(update):
                 user.update(venueId=None, customVenue=text.strip())
                 finish(db, user)
         else:
-            send(db, uid, tr(user.get('language','ru'),'bot.menu'))
+            send(db, uid, tr(user.get('language','en'),'bot.menu'), store_keyboard())
         save_user(db, user)
         db.execute('INSERT INTO updates VALUES (?,?)', (update['update_id'], int(time.time())))
 

@@ -26,6 +26,6 @@ test('coach pages render with the actual locale engine',async()=>{
   assert.match(context.durationField(90),/min="60"/);
  }
  await context.loadLanguage('en');
- assert.match(context.profileView(),/Settings/);
+ assert.match(context.profileView(),/Profile/);
  assert.match(context.groupsView(),/Groups and students/);
 });

@@ -1,7 +1,7 @@
-let uiLanguage='ru',uiCatalog={};
+let uiLanguage='en',uiCatalog={};
 const localeCache={},patternCache={};
-async function loadLanguage(language='ru'){
- const next=['ru','en','kaz'].includes(language)?language:'ru';
+async function loadLanguage(language='en'){
+ const next=['ru','en','kaz'].includes(language)?language:'en';
  if(!localeCache[next]){const response=await fetch('locales/'+next+'.json',{cache:'no-store'});if(!response.ok)throw Error('Could not load language');localeCache[next]=await response.json()}
  uiLanguage=next;uiCatalog=localeCache[next];document.documentElement.lang=next==='kaz'?'kk':next;
 }

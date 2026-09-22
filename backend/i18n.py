@@ -4,15 +4,15 @@ from pathlib import Path
 
 @lru_cache(maxsize=3)
 def catalog(language):
-    if language not in ('ru','en','kaz'):language='ru'
+    if language not in ('ru','en','kaz'):language='en'
     return json.loads((Path(__file__).resolve().parents[1]/'dist'/'locales'/(language+'.json')).read_text())
 
 def language(db,uid):
     row=db.execute('SELECT data FROM users WHERE telegram_id=?',(uid,)).fetchone()
-    return json.loads(row['data']).get('language','ru') if row else 'ru'
+    return json.loads(row['data']).get('language','en') if row else 'en'
 
 def tr(language,key,**values):
-    return catalog(language).get(key,catalog('ru').get(key,key)).format(**values)
+    return catalog(language).get(key,catalog('en').get(key,key)).format(**values)
 
 def duration_text(minutes,lang='ru'):
     h,m=divmod(max(0,round(minutes)),60)

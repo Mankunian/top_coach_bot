@@ -102,7 +102,15 @@ const venues=[
     "address": "Проспект Абая, 159",
     "source": "https://2gis.kz/almaty/search/Тенисы",
     "checkedAt": "2026-09-17"
+  },
+  {
+    "id": "ce4902d1-4554-48a8-9497-90d2d3325e89",
+    "city": "Los Angeles",
+    "name": "Hermon Park Tennis Courts",
+    "address": "5637 Via Marisol, Los Angeles, CA 90042",
+    "source": "https://maps.apple/p/DSzNUmG-zenm.L",
+    "checkedAt": "2026-09-23"
   }
 ];
 
-const cities=[{"id": "c66b58d4-5bb2-4bd0-9714-9bc1339e82e9", "code": "01", "name": "Астана"}, {"id": "ae286aee-3290-4689-9d4f-7bd1895d805e", "code": "02", "name": "Алматы"}];
+const cities=[{"id": "c66b58d4-5bb2-4bd0-9714-9bc1339e82e9", "code": "01", "name": "Астана"}, {"id": "ae286aee-3290-4689-9d4f-7bd1895d805e", "code": "02", "name": "Алматы"}, {"id": "f57cf1e4-8da8-4e48-8ea6-a3fcb049bef1", "code": "03", "name": "Los Angeles"}];

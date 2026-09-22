@@ -75,6 +75,17 @@ class Handler(SimpleHTTPRequestHandler):
             if not any(c['id'] == city_id for c in cities()):
                 return self.result(400, {'error': 'Unknown city'})
             return self.result(200, venues(city_id))
+        if route.path.startswith('/api/groups/'):
+            try:
+                user=self.user(); group_id=route.path.split('/')[-1]
+                with connect() as db:
+                    state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data'])
+                    group=next((item for item in state['groups'] if item['id']==group_id and item.get('showToStudents',True)),None)
+                    coach=read_user(db,group['coach']) if group else None
+                if not group or not coach:return self.result(404,{'error':'Group not found'})
+                return self.result(200,{key:group.get(key) for key in ['id','coach','name','place','days','time','durationMinutes','type','start','end'] }|{'coachName':coach.get('fullName','Coach')})
+            except (ValueError, KeyError, TypeError):
+                return self.result(401,{'error':'Open the app from Telegram after registration.'})
         if route.path == '/api/state':
             try:
                 return self.result(200, perform(self.user(), 'view', {}))
@@ -118,9 +129,9 @@ class Handler(SimpleHTTPRequestHandler):
                 except (ValueError, KeyError, TypeError):
                     return self.result(401, {'error': 'Откройте приложение заново из бота.'})
                 data = json.loads(self.rfile.read(size))
-                name, bio = data.get('fullName'), data.get('bio')
-                if not isinstance(name, str) or not name.strip() or len(name) > 120 or not isinstance(bio, str) or len(bio) > 1000:
-                    return self.result(400, {'error': 'Проверьте ФИО и описание.'})
+                name, bio, email = data.get('fullName'), data.get('bio'), data.get('email')
+                if not isinstance(name, str) or not name.strip() or len(name) > 120 or not isinstance(bio, str) or len(bio) > 1000 or not isinstance(email,str) or len(email)>254 or '@' not in email:
+                    return self.result(400, {'error': 'Enter a valid full name, email and profile description.'})
                 city=next((c for c in cities() if c['id']==data.get('cityId',user.get('cityId'))),None)
                 if not city: return self.result(400, {'error':'Выберите город'})
                 changed=city['id']!=user.get('cityId')
@@ -128,7 +139,7 @@ class Handler(SimpleHTTPRequestHandler):
                 venue_id=data.get('venueId')
                 selected=next((v for v in venues(city['id']) if v['id']==venue_id),None) if venue_id else None
                 if venue_id and not selected:return self.result(400, {'error':'Корт не относится к выбранному городу'})
-                user.update(fullName=name.strip(),bio=bio.strip(),cityId=city['id'],cityCode=city['code'],city=city['name'])
+                user.update(fullName=name.strip(),email=email.strip().lower(),bio=bio.strip(),cityId=city['id'],cityCode=city['code'],city=city['name'])
                 if user.get('role')=='coach':
                     user.update(venueId=venue_id or None,venue=selected['name'] if selected else str(data.get('venue','' if changed else user.get('venue','')))[:250],address=selected['address'] if selected else str(data.get('address','' if changed else user.get('address','')))[:250])
                     user.pop('customVenue',None)

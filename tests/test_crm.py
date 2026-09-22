@@ -8,8 +8,8 @@ from backend.catalog import cities
 class CRMTests(unittest.TestCase):
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory();os.environ['DB_PATH']=self.temp.name+'/db';initialize()
-  self.coach=dict(telegramId=10,id='a',fullName='Coach',role='coach',step='done',cityId=cities()[0]['id'],city='Астана')
-  self.player=dict(telegramId=20,id='b',fullName='Player',role='player',step='done',cityId=cities()[0]['id'],city='Астана')
+  self.coach=dict(telegramId=10,id='a',fullName='Coach',role='coach',step='done',cityId=cities()[0]['id'],city='Астана',language='ru')
+  self.player=dict(telegramId=20,id='b',fullName='Player',role='player',step='done',cityId=cities()[0]['id'],city='Астана',language='ru')
   self.other=dict(self.coach,telegramId=30)
   with connect() as db:
    for u in [self.coach,self.player,self.other]:save_user(db,u)

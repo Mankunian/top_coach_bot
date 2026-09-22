@@ -20,7 +20,7 @@ class BotTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def update(self, text=None, callback=None, user=101):
+    def update(self, text=None, callback=None, contact=None, user=101):
         self.number += 1
         sender = {'id': user, 'first_name': 'Анна', 'last_name': 'Иванова'}
         message = {'from': sender, 'chat': {'id': user, 'type': 'private'}}
@@ -29,6 +29,7 @@ class BotTests(unittest.TestCase):
             data['callback_query'] = {'id': str(self.number), 'from': sender, 'data': callback, 'message': message}
         else:
             message['text'] = text
+            if contact: message['contact'] = {'user_id':user,'phone_number':contact}
             data['message'] = message
         process_update(data)
         return data
@@ -39,6 +40,7 @@ class BotTests(unittest.TestCase):
             self.update('/start', user=uid)
             self.update(callback='register', user=uid)
             self.update(callback='role:' + role, user=uid)
+            self.update(contact='+15551234567', user=uid)
             self.update(callback='city:' + cities()[0]['id'], user=uid)
             with connect() as db:
                 self.assertEqual(read_user(db,uid)['step'], 'venue' if role=='coach' else 'done')
@@ -47,13 +49,14 @@ class BotTests(unittest.TestCase):
                 user = read_user(db, uid)
                 count = db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0]
             self.assertEqual(user['step'], 'done')
-            self.assertEqual(user['fullName'], 'Анна Иванова')
+            self.assertEqual(user['fullName'], '')
+            self.assertEqual(user['phone'], '+15551234567')
             process_update(event)
             with connect() as db:
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0], count)
 
     def test_invalid_city_and_venue(self):
-        self.update('/start'); self.update(callback='register'); self.update(callback='role:coach')
+        self.update('/start'); self.update(callback='register'); self.update(callback='role:coach'); self.update(contact='+15551234567')
         self.update(callback='city:forged')
         with connect() as db:
             self.assertEqual(read_user(db, 101)['step'], 'city')
@@ -66,7 +69,7 @@ class BotTests(unittest.TestCase):
             self.assertEqual(read_user(db, 101)['step'], 'done')
 
     def test_custom_venue(self):
-        self.update('/start'); self.update(callback='register'); self.update(callback='role:coach')
+        self.update('/start'); self.update(callback='register'); self.update(callback='role:coach'); self.update(contact='+15551234567')
         self.update(callback='city:' + cities()[1]['id']); self.update(callback='venue:custom')
         self.update('Мой корт, ул. Абая, 10')
         with connect() as db:
