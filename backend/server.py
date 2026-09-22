@@ -135,7 +135,7 @@ class Handler(SimpleHTTPRequestHandler):
                 city=next((c for c in cities() if c['id']==data.get('cityId',user.get('cityId'))),None)
                 if not city: return self.result(400, {'error':'Выберите город'})
                 changed=city['id']!=user.get('cityId')
-                if changed:return self.result(400, {'error':'Город закреплён при регистрации. Смена пока недоступна.'})
+                if changed and user.get('role')!='coach':return self.result(400, {'error':'Only coaches can change their city.'})
                 venue_id=data.get('venueId')
                 selected=next((v for v in venues(city['id']) if v['id']==venue_id),None) if venue_id else None
                 if venue_id and not selected:return self.result(400, {'error':'Корт не относится к выбранному городу'})
