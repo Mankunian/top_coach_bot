@@ -113,4 +113,4 @@ const venues=[
   }
 ];
 
-const cities=[{"id": "c66b58d4-5bb2-4bd0-9714-9bc1339e82e9", "code": "01", "name": "Астана"}, {"id": "ae286aee-3290-4689-9d4f-7bd1895d805e", "code": "02", "name": "Алматы"}, {"id": "f57cf1e4-8da8-4e48-8ea6-a3fcb049bef1", "code": "03", "name": "Los Angeles"}];
+const cities=[{"id": "c66b58d4-5bb2-4bd0-9714-9bc1339e82e9", "code": "01", "name": "Астана", "city_en": "Astana"}, {"id": "ae286aee-3290-4689-9d4f-7bd1895d805e", "code": "02", "name": "Алматы", "city_en": "Almaty"}, {"id": "f57cf1e4-8da8-4e48-8ea6-a3fcb049bef1", "code": "03", "name": "Los Angeles", "city_en": "Los Angeles"}];
