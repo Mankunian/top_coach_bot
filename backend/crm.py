@@ -28,8 +28,9 @@ def assign_member(state,db,user,g,pid):
     for session in state['sessions']:
         if session['group']==g['id'] and session['status']=='scheduled' and pid not in session['members']:session['members'].append(pid)
     upcoming=sorted([session for session in state['sessions'] if session['group']==g['id'] and session['status']=='scheduled' and session['ends']>time.time()],key=lambda session:session['begins'])
-    next_text=(f"\nБлижайшая тренировка: {upcoming[0]['date']} в {upcoming[0]['time']}." if upcoming else '\nРасписание появится после назначения тренировки.')
-    send(db,pid,f"🎾 Тренер {user['fullName']} добавил вас в группу «{g['name']}».\n📍 {g['place']}"+next_text+'\nДо встречи на корте!')
+    lang=language(db,pid)
+    next_text=(tr(lang,'bot.group_next_session',date=upcoming[0]['date'],time=upcoming[0]['time']) if upcoming else tr(lang,'bot.group_schedule_pending'))
+    send(db,pid,tr(lang,'bot.group_added',coach=user['fullName'],group=g['name'],place=g['place'],next=next_text))
 
 def add_selected_members(state,db,user,g,data):
     selected=data.get('members',[])
