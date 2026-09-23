@@ -129,6 +129,14 @@ class CRMTests(unittest.TestCase):
   with self.assertRaises(ValueError):perform(self.other,'edit_group',dict(id=gid,durationMinutes=90))
   with self.assertRaises(ValueError):perform(self.coach,'edit_group',dict(id=gid,members=[30]))
 
+ def test_private_group_stays_visible_to_its_members(self):
+  gid=self.setup_group()
+  perform(self.coach,'edit_group',dict(id=gid,showToStudents=False))
+  player_view=perform(self.player,'view',{})
+  self.assertEqual([g['id'] for g in player_view['groups']],[gid])
+  self.assertEqual([s['group'] for s in player_view['sessions']],[gid])
+  self.assertEqual(player_view['publicGroups'],[])
+
  def test_edit_duration_preserves_started_and_history(self):
   from unittest.mock import patch
   gid=self.setup_group();s=perform(self.coach,'view',{})['sessions'][0]

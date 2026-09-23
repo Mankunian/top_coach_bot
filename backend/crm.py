@@ -89,7 +89,9 @@ def state_view(state,user,db):
     def card(pid):
         u=people.get(pid,{});c=uid if coach else next((r['coach'] for r in all_requests if r['status']=='accepted'),0)
         return dict(public(u),displayName=state.get('names',{}).get(balance_key(c,pid),u.get('fullName','Игрок')),hours=state['balances'].get(balance_key(c,pid),0),comment=state['comments'].get(balance_key(c,pid),''),username=u.get('username'))
-    visible_groups=[g for g in state['groups'] if g['coach']==uid or (not coach and uid in g['members'] and g.get('showToStudents',True))]
+    # Visibility controls discovery only. Once a coach has added a player,
+    # that player must keep seeing the private group and every session in it.
+    visible_groups=[g for g in state['groups'] if g['coach']==uid or (not coach and uid in g['members'])]
     visible_group_ids={g['id'] for g in visible_groups}
     public_groups=[g for g in state['groups'] if g.get('showToStudents',True) and g.get('city')==user.get('city')]
     public_group_ids={g['id'] for g in public_groups}
