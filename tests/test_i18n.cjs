@@ -18,7 +18,7 @@ test('language loads; static UI changes, user content is untouched',async()=>{
 test('coach pages render with the actual locale engine',async()=>{
  const source=fs.readFileSync('dist/live.js','utf8');
  Object.assign(context,{e:s=>String(s??''),setTimeout:()=>{},$ :()=>({}),day:'2026-09-17',reportFrom:'2026-09-01',reportTo:'2026-09-17',tab:'groups',requestTab:'pending',money:n=>String(n),state:{user:{role:'coach',language:'en',fullName:'Test',city:'Astana',bio:'',reminderHours:1},groups:[],students:[],sessions:[],payments:[],requests:[],trainers:[]}});
- for(const line of source.split('\n').filter(line=>/^(async )?function /.test(line)))vm.runInContext(line,context);
+ for(const line of source.split('\n').filter(line=>/^(async )?function /.test(line)&&!line.startsWith('function groupDetail(')))vm.runInContext(line,context);
  for(const [lang,label] of [['en','Settings'],['kaz','Баптаулар']]){
   await context.loadLanguage(lang);
   assert.match(context.settingsView(),new RegExp(label));
