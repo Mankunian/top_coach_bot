@@ -12,4 +12,15 @@ def cities():
     return CITIES
 
 def venues(city_id):
-    return [v for v in VENUES if v['cityId'] == city_id]
+    # Existing clients consume the same catalog; admin edits persist in the DB.
+    from .database import connect
+    with connect() as db:
+        if db.pg:
+            exists = db.execute("SELECT to_regclass('admin_directory') AS name").fetchone()['name']
+        else:
+            exists = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='admin_directory'").fetchone()
+        if exists:
+            records = [json.loads(r['data']) for r in db.execute("SELECT data FROM admin_directory WHERE kind='clubs'").fetchall()]
+        else:
+            records = VENUES
+    return [v for v in records if v['cityId'] == city_id]

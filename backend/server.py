@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from .catalog import cities, venues
+from .admin_http import handle as handle_admin
+from . import admin, admin_auth
 from .database import initialize
 from .crm import perform
 from .service import authenticate, connect, flush_outbox, process_update, read_user, save_user
@@ -61,6 +63,7 @@ class Handler(SimpleHTTPRequestHandler):
         return user
 
     def do_GET(self):
+        if handle_admin(self): return
         route = urllib.parse.urlparse(self.path)
         if route.path == '/health':
             with connect() as db:
@@ -105,6 +108,7 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
+        if handle_admin(self): return
         try:
             size = int(self.headers.get('Content-Length', '0'))
             if size < 1 or size > 65536:
@@ -174,6 +178,8 @@ if __name__ == '__main__':
     if os.environ.get('RAILWAY_ENVIRONMENT') and not os.environ.get('DATABASE_URL') and not os.environ.get('DB_PATH', '').startswith('/data/'):
         raise SystemExit('Railway requires persistent volume /data and DB_PATH=/data/topcoach.sqlite3')
     initialize()
+    admin_auth.seed()
+    admin.initialize()
     if os.environ.get('BOT_TOKEN'):
         threading.Thread(target=delivery_worker, daemon=True).start()
     port = int(os.environ.get('PORT', '8080'))

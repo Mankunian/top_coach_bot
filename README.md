@@ -42,3 +42,8 @@ node --check dist/app.js
 - Профиль → Настройки: напоминание за 1 или 3 часа, русский / қазақша / English.
 - Переводы: `dist/locales/ru.json`, `en.json`, `kaz.json`. Язык сохраняется в профиле тренера.
 - Минимум тренировки 60 минут; 90 минут разрешены. Остаток в боте отображается в часах и минутах.
+
+## Web Admin
+
+Protected desktop admin at `/admin`: setup, environment variables, metric definitions
+and deployment instructions are in [docs/web-admin.md](docs/web-admin.md).
