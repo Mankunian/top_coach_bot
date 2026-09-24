@@ -24,6 +24,7 @@ def assign_member(state,db,user,g,pid):
     if type(pid)!=int or not accepted:raise ValueError('Ученик ещё не принят')
     if pid in g['members']:return
     if g['type']=='Индивидуальная' and g['members']:raise ValueError('В индивидуальной группе может быть только один ученик')
+    if g['type']=='Групповая' and len(g['members'])>=g.get('maxParticipants',10):raise ValueError('В группе нет свободных мест')
     g['members'].append(pid)
     for session in state['sessions']:
         if session['group']==g['id'] and session['status']=='scheduled' and pid not in session['members']:session['members'].append(pid)
@@ -160,7 +161,10 @@ def perform(user,action,data):
                 name=required(data.get('name'),60);place=required(data.get('place'));start=date(data['start']);end=date(data['end']) if data.get('end') else None
                 days=data.get('days',[]);kind=data.get('type');clock=datetime.strptime(data['time'],'%H:%M')
                 if not days or any(type(d)!=int or d not in range(7) for d in days) or kind not in ['Групповая','Индивидуальная'] or (end and end<start):raise ValueError('Проверьте расписание')
-                g=dict(id=ident(),coach=uid,name=name,place=place,city=user.get('city'),start=start.isoformat(),end=end.isoformat() if end else '',days=days,time=clock.strftime('%H:%M'),type=kind,durationMinutes=duration(data.get('durationMinutes',60)),showToStudents=bool(data.get('showToStudents',True)),syncToCalendar=bool(data.get('syncToCalendar',True)),members=[])
+                try:maximum=int(data.get('maxParticipants',10))
+                except (TypeError,ValueError):raise ValueError('Укажите количество участников от 1 до 100')
+                if not 1<=maximum<=100:raise ValueError('Укажите количество участников от 1 до 100')
+                g=dict(id=ident(),coach=uid,name=name,place=place,city=user.get('city'),start=start.isoformat(),end=end.isoformat() if end else '',days=days,time=clock.strftime('%H:%M'),type=kind,durationMinutes=duration(data.get('durationMinutes',60)),maxParticipants=maximum if kind=='Групповая' else 1,showToStudents=bool(data.get('showToStudents',True)),syncToCalendar=bool(data.get('syncToCalendar',True)),members=[])
                 state['groups'].append(g);generate(state,g);add_selected_members(state,db,user,g,data)
             elif action in ['assign','rename','delete','edit_group']:
                 g=own_group()
