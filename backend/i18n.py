@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
@@ -22,3 +23,7 @@ def duration_text(minutes,lang='ru'):
     if h:parts.append(f"{h} "+('сағат' if lang=='kaz' else ('hour' if h==1 else 'hours') if lang=='en' else word(h,['час','часа','часов'])))
     if m or not h:parts.append(f"{m} "+('минут' if lang=='kaz' else ('minute' if m==1 else 'minutes') if lang=='en' else word(m,['минута','минуты','минут'])))
     return ' '.join(parts)
+
+def display_date(value):
+    try:return datetime.strptime(str(value),'%Y-%m-%d').strftime('%d.%m.%Y')
+    except ValueError:return str(value)

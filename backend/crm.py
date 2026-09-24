@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from .database import connect
 from .service import read_user, save_user, send
 from .catalog import cities, PLAYER_LEVELS
-from .i18n import language, tr, duration_text
+from .i18n import language, tr, duration_text, display_date
 TZ=timezone(timedelta(hours=5))
 def ident():return str(uuid.uuid4())
 def required(value,maxlen=250):
@@ -29,7 +29,7 @@ def assign_member(state,db,user,g,pid):
         if session['group']==g['id'] and session['status']=='scheduled' and pid not in session['members']:session['members'].append(pid)
     upcoming=sorted([session for session in state['sessions'] if session['group']==g['id'] and session['status']=='scheduled' and session['ends']>time.time()],key=lambda session:session['begins'])
     lang=language(db,pid)
-    next_text=(tr(lang,'bot.group_next_session',date=upcoming[0]['date'],time=upcoming[0]['time']) if upcoming else tr(lang,'bot.group_schedule_pending'))
+    next_text=(tr(lang,'bot.group_next_session',date=display_date(upcoming[0]['date']),time=upcoming[0]['time']) if upcoming else tr(lang,'bot.group_schedule_pending'))
     send(db,pid,tr(lang,'bot.group_added',coach=user['fullName'],group=g['name'],place=g['place'],next=next_text))
 
 def add_selected_members(state,db,user,g,data):
@@ -65,18 +65,18 @@ def tick(state,db,now=None):
                 charge=tr(lang,'bot.charged',duration=duration_text(charged,lang)) if charged else tr(lang,'bot.nocharge')
                 send(db,pid,tr(lang,'bot.completed',name=s['name'],charge=charge,balance=duration_text(available-charged,lang)))
             lang=language(db,s['coach'])
-            send(db,s['coach'],tr(lang,'bot.coach_completed',name=s['name'],date=s['date'],time=s['time'],duration=duration_text(sum(c['minutes'] for c in s['charges']),lang)))
+            send(db,s['coach'],tr(lang,'bot.coach_completed',name=s['name'],date=display_date(s['date']),time=s['time'],duration=duration_text(sum(c['minutes'] for c in s['charges']),lang)))
             continue
         if now>=s['begins'] and not s.get('startNotified'):
             for recipient in set([s['coach']]+[p for p in s['members'] if p not in s['absent']]):
-                send(db,recipient,tr(language(db,recipient),'bot.started',name=s['name'],time=s['time'],date=s['date'],place=s['place']))
+                send(db,recipient,tr(language(db,recipient),'bot.started',name=s['name'],time=s['time'],date=display_date(s['date']),place=s['place']))
             s['startNotified']=True
         coach=read_user(db,s['coach']) or {}
         for hours in [coach.get('reminderHours',3)]:
             # Avoid sending both missed reminders after downtime.
             delta=s['begins']-now
             if not s['reminded'] and hours*3600-180<=delta<=hours*3600:
-                for uid in set([s['coach']]+s['members']):send(db,uid,tr(language(db,uid),'bot.reminder',name=s['name'],date=s['date'],time=s['time'],place=s['place'],hours=hours))
+                for uid in set([s['coach']]+s['members']):send(db,uid,tr(language(db,uid),'bot.reminder',name=s['name'],date=display_date(s['date']),time=s['time'],place=s['place'],hours=hours))
                 s['reminded'].append(hours)
 def state_view(state,user,db):
     uid=user['telegramId'];coach=user['role']=='coach'
@@ -154,7 +154,8 @@ def perform(user,action,data):
                     session=next((item for item in state['sessions'] if item['id']==r['sessionId'] and item['coach']==uid),None)
                     if not session or session['status']!='scheduled':raise ValueError('Тренировка недоступна')
                     if r['player'] not in session['members']:session['members'].append(r['player'])
-                send(db,r['player'],f"✅ Тренер {user['fullName']} принял вашу заявку!\n\nСкоро тренер свяжется с вами или определит вас в группу. Расписание появится в TopCoach." if r['status']=='accepted' else 'Заявка отклонена. Свяжитесь с тренером для уточнения.')
+                player_lang=language(db,r['player'])
+                send(db,r['player'],tr(player_lang,'bot.request_accepted',coach=user['fullName']) if r['status']=='accepted' else tr(player_lang,'bot.request_rejected'))
             elif action=='group':
                 name=required(data.get('name'),60);place=required(data.get('place'));start=date(data['start']);end=date(data['end']) if data.get('end') else None
                 days=data.get('days',[]);kind=data.get('type');clock=datetime.strptime(data['time'],'%H:%M')
@@ -221,14 +222,14 @@ def perform(user,action,data):
                         state['payments'].append(dict(id=ident(),nonce=nonce,coach=uid,player=pid,name=state.get('names',{}).get(key,read_user(db,pid)['fullName']),hours=hours,amount=int(amount*100),date=paid.isoformat(),created=time.time(),payer=required(data.get('payer'),120),comment=str(data.get('comment',''))[:500],group=g['name'] if g else 'Без группы',type=g['type'] if g else 'Не назначен'))
                         state['balances'][key]=(round(state['balances'].get(key,0)*60)+hours*60)/60
                         lang=language(db,pid)
-                        send(db,pid,tr(lang,'bot.payment',coach=user['fullName'],duration=duration_text(hours*60,lang),amount=f'{amount:,.2f}',date=paid.isoformat(),balance=duration_text(state['balances'][key]*60,lang)))
+                        send(db,pid,tr(lang,'bot.payment',coach=user['fullName'],duration=duration_text(hours*60,lang),amount=f'{amount:,.2f}',date=display_date(paid.isoformat()),balance=duration_text(state['balances'][key]*60,lang)))
             else:
                 s=next((s for s in state['sessions'] if s['id']==data.get('id') and s['coach']==uid),None)
                 if not s or s['status']!='scheduled':raise ValueError('Тренировка завершена или недоступна')
                 if action=='cancel':
                     if s['begins']-time.time()<=86400:raise ValueError('Отмена доступна более чем за 24 часа')
                     s['reason']=required(data.get('reason'),500);s['status']='cancelled'
-                    for pid in set([uid]+s['members']):send(db,pid,tr(language(db,pid),'bot.cancelled',name=s['name'],date=s['date'],reason=s['reason']))
+                    for pid in set([uid]+s['members']):send(db,pid,tr(language(db,pid),'bot.cancelled',name=s['name'],date=display_date(s['date']),reason=s['reason']))
                 else:
                     pid=int(data['player'])
                     if pid not in s['members'] or type(data.get('present'))!=bool:raise ValueError('Некорректный участник')
@@ -237,7 +238,7 @@ def perform(user,action,data):
         elif action=='absence':
             s=next((s for s in state['sessions'] if s['id']==data.get('id') and uid in s['members']),None)
             if not s or s['status']!='scheduled' or s['begins']-time.time()<86400:raise ValueError('До занятия осталось менее суток')
-            if uid not in s['absent']:s['absent'].append(uid);send(db,s['coach'],tr(language(db,s['coach']),'bot.absence',player=user['fullName'],name=s['name'],date=s['date']))
+            if uid not in s['absent']:s['absent'].append(uid);send(db,s['coach'],tr(language(db,s['coach']),'bot.absence',player=user['fullName'],name=s['name'],date=display_date(s['date'])))
         elif action!='view':raise ValueError('Неизвестное действие')
         db.execute('UPDATE crm SET data=? WHERE id=1',(json.dumps(state,ensure_ascii=False),))
         return state_view(state,user,db)

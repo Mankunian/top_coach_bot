@@ -207,6 +207,8 @@
   "bot.ready": "✅ You’re all set, {name}!\n\nOpen TopCoach to continue.",
   "bot.group_added": "🎾 Coach {coach} added you to the group “{group}”.\n📍 {place}{next}\nSee you on the court!",
   "bot.group_next_session": "\nNext session: {date} at {time}.",
+  "bot.request_accepted": "✅ Coach {coach} accepted your request!\n\nYour coach will contact you soon or add you to a group. Your schedule will appear in TopCoach.",
+  "bot.request_rejected": "Your request was declined. Please contact the coach for details.",
   "bot.group_schedule_pending": "\nThe schedule will appear once the coach creates a session.",
   "Часы не снимутся.": "No hours will be deducted.",
   "Ученики": "Students",
