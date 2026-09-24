@@ -5,6 +5,7 @@ import re
 source = (pathlib.Path(__file__).resolve().parents[1] / 'dist' / 'venues.js').read_text()
 CITIES = json.loads(re.search(r'const cities=(.*?);', source, re.S).group(1))
 VENUES = json.loads(re.search(r'const venues=(.*?);', source, re.S).group(1))
+PLAYER_LEVELS = ('1.0','1.5','2.0','2.5','3.0','3.5','4.0','4.5','5.0','5.5','6.0','7.0')
 for venue in VENUES:
     venue['cityId'] = next(c['id'] for c in CITIES if c['name'] == venue['city'])
 

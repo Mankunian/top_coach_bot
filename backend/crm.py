@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from .database import connect
 from .service import read_user, save_user, send
-from .catalog import cities
+from .catalog import cities, PLAYER_LEVELS
 from .i18n import language, tr, duration_text
 TZ=timezone(timedelta(hours=5))
 def ident():return str(uuid.uuid4())
@@ -89,7 +89,7 @@ def state_view(state,user,db):
     ids=coach_members(state,uid) if coach else [uid]
     def card(pid):
         u=people.get(pid,{});c=uid if coach else next((r['coach'] for r in all_requests if r['status']=='accepted'),0)
-        return dict(public(u),displayName=state.get('names',{}).get(balance_key(c,pid),u.get('fullName','Игрок')),hours=state['balances'].get(balance_key(c,pid),0),comment=state['comments'].get(balance_key(c,pid),''),username=u.get('username'))
+        return dict(public(u),displayName=state.get('names',{}).get(balance_key(c,pid),u.get('fullName','Игрок')),hours=state['balances'].get(balance_key(c,pid),0),comment=state['comments'].get(balance_key(c,pid),''),level=state.get('levels',{}).get(balance_key(c,pid),''),username=u.get('username'))
     # Visibility controls discovery only. Once a coach has added a player,
     # that player must keep seeing the private group and every session in it.
     visible_groups=[g for g in state['groups'] if g['coach']==uid or (not coach and uid in g['members'])]
@@ -98,7 +98,7 @@ def state_view(state,user,db):
     public_group_ids={g['id'] for g in public_groups}
     named_requests=[dict(r,playerName=people.get(r['player'],{}).get('fullName','Игрок'),coachName=people.get(r['coach'],{}).get('fullName','Тренер'),sessionName=next((s['name'] for s in state['sessions'] if s['id']==r.get('sessionId')),'') if r.get('sessionId') else '') for r in req]
     group_join_requests=[dict(r,playerName=people.get(r['player'],{}).get('fullName','Игрок')) for r in all_requests if coach and r.get('groupId') and r['status']=='pending']
-    return dict(user=user,cities=cities(),paidTotal=sum(p['amount'] for p in state['payments'] if p['player']==uid and any(r['coach']==p['coach'] and r['status']=='accepted' for r in all_requests)) if not coach else 0,requests=named_requests,groupJoinRequests=group_join_requests,students=[card(pid) for pid in ids if pid in people],groups=visible_groups,sessions=[s for s in state['sessions'] if s['coach']==uid or (not coach and uid in s['members'] and s['group'] in visible_group_ids)],publicGroups=public_groups if not coach else [],payments=[p for p in state['payments'] if p['coach']==uid] if coach else [],trainers=[dict(public(u),username=u.get('username') if any(r['coach']==u['telegramId'] and r['status']=='accepted' for r in req) else None) for u in profiles if u.get('role')=='coach' and u.get('step')=='done' and u.get('cityId')==user.get('cityId')])
+    return dict(user=user,cities=cities(),playerLevels=PLAYER_LEVELS,paidTotal=sum(p['amount'] for p in state['payments'] if p['player']==uid and any(r['coach']==p['coach'] and r['status']=='accepted' for r in all_requests)) if not coach else 0,requests=named_requests,groupJoinRequests=group_join_requests,students=[card(pid) for pid in ids if pid in people],groups=visible_groups,sessions=[s for s in state['sessions'] if s['coach']==uid or (not coach and uid in s['members'] and s['group'] in visible_group_ids)],publicGroups=public_groups if not coach else [],payments=[p for p in state['payments'] if p['coach']==uid] if coach else [],trainers=[dict(public(u),username=u.get('username') if any(r['coach']==u['telegramId'] and r['status']=='accepted' for r in req) else None) for u in profiles if u.get('role')=='coach' and u.get('step')=='done' and u.get('cityId')==user.get('cityId')])
 def perform(user,action,data):
     with connect() as db:
         db.execute('BEGIN IMMEDIATE');state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data']);tick(state,db)
@@ -140,7 +140,7 @@ def perform(user,action,data):
                 markup={'inline_keyboard':[[{'text':tr(language(db,target['telegramId']),'bot.requests'),'web_app':{'url':link}}]]}
             comment=str(data.get('comment','')).strip()[:500] or 'Не указан'
             send(db,target['telegramId'],tr(language(db,target['telegramId']),'bot.request',player=user['fullName'],city=user.get('city','—'),comment=comment),markup)
-        elif action in ['decision','group','edit_group','assign','rename','delete','payment','comment','student_name','attendance','cancel']:
+        elif action in ['decision','group','edit_group','assign','rename','delete','payment','comment','student_name','student_update','attendance','cancel']:
             if not coach:raise ValueError('Действие доступно тренеру')
             if action=='decision':
                 r=next((r for r in state['requests'] if r['id']==data.get('id') and r['coach']==uid),None)
@@ -184,11 +184,31 @@ def perform(user,action,data):
                     state['groups'].remove(g)
                     for s in state['sessions']:
                         if s['group']==g['id'] and s['status']=='scheduled':s['status']='cancelled';s['reason']='Группа удалена'
-            elif action in ['payment','comment','student_name']:
+            elif action in ['payment','comment','student_name','student_update']:
                 pid=int(data['player'])
                 if pid not in coach_members(state,uid):raise ValueError('Ученик недоступен')
                 key=balance_key(uid,pid)
                 if action=='student_name':state.setdefault('names',{})[key]=required(data.get('name'),120)
+                elif action=='student_update':
+                    state.setdefault('names',{})[key]=required(data.get('name'),120)
+                    level=data.get('level','')
+                    if level not in PLAYER_LEVELS and level!='':raise ValueError('Некорректный уровень игрока')
+                    state.setdefault('levels',{})[key]=level
+                    state['comments'][key]=str(data.get('comment',''))[:500]
+                    selected=data.get('groups',[])
+                    if not isinstance(selected,list) or any(not isinstance(item,str) for item in selected):raise ValueError('Проверьте группы')
+                    allowed=[g for g in state['groups'] if g['coach']==uid]
+                    if any(item not in [g['id'] for g in allowed] for item in selected):raise ValueError('Группа недоступна')
+                    for group in allowed:
+                        wanted=group['id'] in selected
+                        if wanted and pid not in group['members']:
+                            if group['type']=='Индивидуальная' and group['members']:raise ValueError('В индивидуальной группе может быть только один ученик')
+                            group['members'].append(pid)
+                        if not wanted and pid in group['members']:group['members'].remove(pid)
+                        for session in state['sessions']:
+                            if session['group']==group['id'] and session['status']=='scheduled':
+                                if wanted and pid not in session['members']:session['members'].append(pid)
+                                if not wanted and pid in session['members']:session['members'].remove(pid)
                 elif action=='comment':state['comments'][key]=str(data.get('comment',''))[:500]
                 else:
                     hours=data.get('hours')
