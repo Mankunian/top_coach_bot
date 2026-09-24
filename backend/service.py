@@ -60,6 +60,8 @@ def show_venues(db, user):
 def finish(db, user):
     user['step'] = 'done'
     user.setdefault('registeredAt', int(time.time()))
+    user.setdefault('onboardingCompleted', False)
+    user.setdefault('onboardingVersion', 1)
     url = os.environ.get('MINI_APP_URL', '')
     lang=user.get('language','en')
     markup = {'inline_keyboard': [[{'text': tr(lang,'bot.open'), 'web_app': {'url': url}}]]} if url.startswith('https://') else None

@@ -114,6 +114,9 @@ def perform(user,action,data):
             user=read_user(db,uid)
             user.update(language=lang,reminderHours=hours)
             save_user(db,user)
+        elif action=='onboarding':
+            user.update(onboardingCompleted=True,onboardingVersion=1)
+            save_user(db,user)
         elif action=='request':
             if coach:raise ValueError('Заявка доступна игроку')
             requested_session=data.get('sessionId');requested_group=data.get('groupId')

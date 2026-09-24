@@ -35,7 +35,16 @@ class CRMTests(unittest.TestCase):
   perform(self.player,'absence',{'id':session['id']})
   with connect() as db:
    state=json.loads(db.execute('SELECT data FROM crm WHERE id=1').fetchone()['data']);tick(state,db,session['ends']+1);tick(state,db,session['ends']+1)
-   self.assertEqual(state['balances']['10:20'],5);self.assertEqual(state['sessions'][0]['status'],'completed')
+  self.assertEqual(state['balances']['10:20'],5);self.assertEqual(state['sessions'][0]['status'],'completed')
+
+ def test_onboarding_completion_persists_for_each_role(self):
+  for user in [self.coach,self.player]:
+   view=perform(user,'onboarding',{})
+   self.assertTrue(view['user']['onboardingCompleted'])
+   self.assertEqual(view['user']['onboardingVersion'],1)
+   with connect() as db:
+    stored=json.loads(db.execute('SELECT data FROM users WHERE telegram_id=?',(user['telegramId'],)).fetchone()['data'])
+   self.assertTrue(stored['onboardingCompleted'])
  def test_charge_once_cancel(self):
   self.setup_group();perform(self.coach,'payment',dict(player=20,hours=2,amount='10',date=datetime.now(TZ).date().isoformat(),payer='Player',nonce='a'))
   with connect() as db:
