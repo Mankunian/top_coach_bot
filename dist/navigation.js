@@ -10,4 +10,4 @@ function navigate(route){route=allowedRoute(route);if(route===page)return;closeD
 function navigateStudent(id){const student=state.students.find(item=>item.telegramId===Number(id));if(!student)return;closeDialog();history.pushState({topcoach:true,depth:(history.state?.topcoach?history.state.depth||0:0)+1,page:'student',studentId:Number(id)},'',routeURL('student',{studentId:Number(id)}));page='student';render();window.scrollTo(0,0)}
 function goBack(){if($('#dialog').open){closeDialog();return}if(history.state?.topcoach&&history.state.depth>0){history.back();return}page=parentRoute(page);history.replaceState({topcoach:true,depth:0,page},'',routeURL(page));render();window.scrollTo(0,0)}
 function syncBackButton(){if(page==='home')tg?.BackButton?.hide();else tg?.BackButton?.show()}
-function pageBack(){return ['profile','requests','settings','reports','premium','student'].includes(page)?html`<button class="page-back" onclick="goBack()">← Назад</button>`:''}
+function pageBack(){return ['profile','requests','reports','premium'].includes(page)?html`<button class="page-back" onclick="goBack()">← Назад</button>`:''}

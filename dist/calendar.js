@@ -3,7 +3,7 @@ let calendarCursor=new Date(new Date().getFullYear(),new Date().getMonth(),1);
 const weekLabels=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
 function localISO(value){const date=new Date(value);return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`}
 function currentCalendarDay(){return localISO(new Date())}
-function sessionsForDay(value){return state.sessions.filter(session=>session.date===value).sort((a,b)=>a.begins-b.begins)}
+function sessionsForDay(value){return state.sessions.filter(session=>session.date===value&&sessionStatus(session)!=='cancelled').sort((a,b)=>a.begins-b.begins)}
 function calendarMove(step){if(calendarMode==='month')calendarCursor=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+step,1);else calendarCursor=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),calendarCursor.getDate()+step*7);render()}
 function calendarToday(){calendarCursor=new Date();render()}
 function weekStart(value){const date=new Date(value.getFullYear(),value.getMonth(),value.getDate());date.setDate(date.getDate()-(date.getDay()+6)%7);return date}

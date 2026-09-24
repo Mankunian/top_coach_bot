@@ -195,11 +195,11 @@ def perform(user,action,data):
                     if level not in PLAYER_LEVELS and level!='':raise ValueError('Некорректный уровень игрока')
                     state.setdefault('levels',{})[key]=level
                     state['comments'][key]=str(data.get('comment',''))[:500]
-                    selected=data.get('groups',[])
-                    if not isinstance(selected,list) or any(not isinstance(item,str) for item in selected):raise ValueError('Проверьте группы')
+                    selected=data.get('groups')
+                    if selected is not None and (not isinstance(selected,list) or any(not isinstance(item,str) for item in selected)):raise ValueError('Проверьте группы')
                     allowed=[g for g in state['groups'] if g['coach']==uid]
-                    if any(item not in [g['id'] for g in allowed] for item in selected):raise ValueError('Группа недоступна')
-                    for group in allowed:
+                    if selected is not None and any(item not in [g['id'] for g in allowed] for item in selected):raise ValueError('Группа недоступна')
+                    for group in allowed if selected is not None else []:
                         wanted=group['id'] in selected
                         if wanted and pid not in group['members']:
                             if group['type']=='Индивидуальная' and group['members']:raise ValueError('В индивидуальной группе может быть только один ученик')
